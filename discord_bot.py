@@ -83,10 +83,6 @@ except Exception as e:
 else:
     logger.debug('Initialized Boto3 dynamodb session')
 
-def _return_time(e):
-    '''Returns time field of dict for use as a list sort key.'''
-    return e['time']
-
 def get_city_name_from_term(term) -> str:
     logger.debug(f'Attempting to get_city_name_from_term({term})')
     for city in CITY_INFO:
@@ -200,6 +196,7 @@ async def info_gather():
     logger.info('Attempting to run scheduled task info_gather()')
     refresh_invasion_data()
     refresh_siege_window()
+    logger.info('Completed running scheduled task info_gather()')
 
 info_gather.start()
 bot.run(config['DISCORD_TOKEN'])
