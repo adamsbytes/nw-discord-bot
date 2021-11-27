@@ -1,0 +1,14 @@
+version: 0.0
+os: linux
+files:
+ - source: .
+   destination: /opt/invasion-bot
+hooks:
+  AfterInstall:
+   - location: scripts/install_app_dependencies
+     timeout: 300
+     runas: bot-user
+  ApplicationStart:
+   - location: scripts/start_bot
+     timeout: 300
+     runas: bot-user
