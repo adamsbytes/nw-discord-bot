@@ -3,9 +3,10 @@
 # Disable:
 #   dict-items poor suggestion
 #   line length (unavoidable)
+#   too many branches (TODO)
 #   general exception (TODO)
 #   logging with f-string
-# pylint: disable=C0206,C0301,W0703,W1203
+# pylint: disable=C0206,C0301,R0912,W0703,W1203
 
 import datetime
 import logging
@@ -18,10 +19,12 @@ from discord.ext import commands, tasks
 from dotenv import dotenv_values
 
 # Branch log:
+# Added function to determine invasion string separately of receiving the command
 # Changed functions to async/await where possible
+# Changed data injestion to refrence invasions for tomorrow also
+# Changed !city command to respond correctly to different days
 
 # TODO: let !invasions tonight/tomorrow/none(all)
-# TODO: let !city show invasions for tonight/tomorrow
 
 # Need a better way to determine this
 if 'LOGNAME' not in os.environ: # logname is env var on ec2, not on local dev
@@ -113,6 +116,50 @@ async def get_city_name_from_term(term) -> str:
             logger.debug(f'Found {term} in {city}')
             return city
 
+async def get_city_invasion_string(city, day=None) -> str:
+    '''Returns a string detailing invasion status for a [city] on [day] or both today/tomorrow if [day=None](default)'''
+    # verify today's invasions are actually for today, otherwise refresh data
+    if CITY_INFO[city]['invasion_today_date'] != datetime.date.today().strftime('%Y-%m-%d'):
+        await refresh_invasion_data()
+    if day is None: # both days
+        # if invasion later and it is not siege time yet
+        if CITY_INFO[city]['invasion_today'] and is_siege_window_in_future(CITY_INFO[city]['siege_time']):
+            response = f"{city} has an invasion later today at {CITY_INFO[city]['siege_time']} EST"
+        # if invasion happened earlier today
+        if CITY_INFO[city]['invasion_today'] and not is_siege_window_in_future(CITY_INFO[city]['siege_time']):
+            response = f"{city} had an invasion earlier today at {CITY_INFO[city]['siege_time']} EST"
+        # if invasion is tomorrow
+        if CITY_INFO[city]['invasion_tomorrow']:
+            response = f"{city} has an invasion tomorrow at {CITY_INFO[city]['siege_time']} EST"
+        # if no invasions next two days
+        if not CITY_INFO[city]['invasion_today'] and not CITY_INFO[city]['invasion_tomorrow']:
+            response = f"{city} does not have any invasions today or tomorrow!"
+    elif day == 'tomorrow': # tomorrow
+        if CITY_INFO[city]['invasion_tomorrow']:
+            response = f"{city} has an invasion tomorrow at {CITY_INFO[city]['siege_time']} EST"
+        if not CITY_INFO[city]['invasion_tomorrow']:
+            response = f"{city} does not have an invasion tomorrow!"
+    else: # assume today otherwise
+        # if invasion later and it is not siege time yet
+        if CITY_INFO[city]['invasion_today'] and is_siege_window_in_future(CITY_INFO[city]['siege_time']):
+            response = f"{city} has an invasion later today at {CITY_INFO[city]['siege_time']} EST"
+        # if invasion happened earlier today
+        if CITY_INFO[city]['invasion_today'] and not is_siege_window_in_future(CITY_INFO[city]['siege_time']):
+            response = f"{city} had an invasion earlier today at {CITY_INFO[city]['siege_time']} EST"
+        # if no invasion today
+        if not CITY_INFO[city]['invasion_today']:
+            response = f"{city} does not have an invasion today!"
+    return response
+
+async def is_siege_window_in_future(hour) -> bool:
+    '''Returns a bool that is True if siege window [time] is after now'''
+    logger(f'Attempting to determine if siege window is in future for: {hour}')
+    if hour <1 or hour > 24 or not isinstance(hour, int):
+        logger.exception(f'Cannot operate on hour: {hour}')
+    time_now = datetime.datetime.now()
+    time_hour = time_now.replace(hour=hour)
+    return time_now < time_hour
+
 def refresh_invasion_data(city:str = None) -> None:
     '''Gets invasion status from dynamodb for [city] or all cities if [city=None] (default)'''
     logger.debug(f'Attempting to refresh_invasion_data({city})')
@@ -127,10 +174,11 @@ def refresh_invasion_data(city:str = None) -> None:
         city_db_table = f"{config['EVENT_TABLE_PREFIX']}{city_name}"
         # Get today's invasions
         logger.debug(f"Attempting to find today's invasions in table: {city_db_table}")
+        today_search_date = str(datetime.date.today().strftime('%Y-%m-%d'))
         response = db.get_item(
             TableName=city_db_table,
             Key = {
-                'date': {'S': str(datetime.date.today().strftime('%Y-%m-%d'))}
+                'date': {'S': str(today_search_date)}
             }
         )
         logger.debug(f'Response from db: {response}')
@@ -138,13 +186,15 @@ def refresh_invasion_data(city:str = None) -> None:
             CITY_INFO[c_name]['invasion_today'] = True
         else:
             CITY_INFO[c_name]['invasion_today'] = False
+        CITY_INFO[c_name]['invasion_today_date'] = today_search_date
         logger.debug(f"Determined today's invasion status: {CITY_INFO[c_name]['invasion_today']}")
         # Get tomorrow's invasions     
-        logger.debug(f"Attempting to find tomorrow's invasions in table: {city_db_table}")   
+        logger.debug(f"Attempting to find tomorrow's invasions in table: {city_db_table}") 
+        tomorrow_search_date = str((datetime.date.today() + datetime.timedelta(days=1)).strftime('%Y-%m-%d'))
         response = db.get_item(
             TableName=city_db_table,
             Key = {
-                'date': {'S': str((datetime.date.today() + datetime.timedelta(days=1)).strftime('%Y-%m-%d'))}
+                'date': {'S': str(tomorrow_search_date)}
             }
         )
         logger.debug(f'Response from db: {response}')
@@ -152,6 +202,7 @@ def refresh_invasion_data(city:str = None) -> None:
             CITY_INFO[c_name]['invasion_tomorrow'] = True
         else:
             CITY_INFO[c_name]['invasion_tomorrow'] = False
+        CITY_INFO[c_name]['invasion_tomorrow_date'] = tomorrow_search_date
         logger.debug(f"Determined tomorrow's invasion status: {CITY_INFO[c_name]['invasion_tomorrow']}")
     logger.debug('Completed running refresh_invasion_data()')
 
@@ -178,16 +229,16 @@ def refresh_siege_window(city:str = None) -> None:
     logger.debug('Completed running refresh_siege_window()')
 
 @bot.command(name='city', help='Responds with the siege window and invasion status for a city')
-async def invasion(ctx, city):
-    '''Responds to !invasion [city] command with the invasion status and siege window for [city]'''
-    logger.info(f'!invasion invoked for {city}')
+async def invasion(ctx, city, day=None):
+    '''Responds to !invasion [city] [day] command with the invasion status and siege window for [city] on [day]'''
+    logger.info(f'!invasion invoked for {city} on {day}')
     city = await get_city_name_from_term(city)
     logger.debug(f'Reformatted city name to {city}')
-    logger.debug(f"Invasion status for {city}: {str(CITY_INFO[city]['invasion_today'])}")
-    if CITY_INFO[city]['invasion_today']:
-        response = f"{city} has an invasion tonight. The invasion begins at {CITY_INFO[city]['siege_time']} EST"
+    # if times are valid values
+    if day is None or day == 'today' or day == 'tomorrow':
+        response = await get_city_invasion_string(city, day)
     else:
-        response = f"{city} does not have an invasion tonight. Their siege window begins at {CITY_INFO[city]['siege_time']} EST"
+        response = f'Invalid response for [day], expected [today, tomorrow] got [{day}]'
     await ctx.send(response)
 
 @bot.command(name='invasions', help='Responds with all invasions happening today')
