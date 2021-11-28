@@ -20,3 +20,7 @@ hooks:
     - location: scripts/stop_bot
       timeout: 300
       runas: root
+  ValidateService:
+    - location: scripts/validate_bot_running
+      timeout: 300
+      runas: root
