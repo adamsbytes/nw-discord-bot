@@ -59,7 +59,7 @@ CITY_INFO = {
     }
 }
 
-# TODO: a better way to determine this
+# Need a better way to determine this
 if 'HOSTNAME' not in os.environ: # hostname is env var on ec2, not on local dev
     DEV_MODE = True
     config['LOG_FILE_NAME'] = f"/opt/invasion-bot/{config['LOG_FILE_NAME']}"
@@ -88,7 +88,6 @@ try:
     else:
         logger.debug('Attempting to initialize prod Boto3 dynamodb session')
         db = boto3.client('dynamodb', region_name=config['AWS_REGION'])
-
 except ClientError as e:
     logger.exception('Failed to initalize boto3 session')
 else:
