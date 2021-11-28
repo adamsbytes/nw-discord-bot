@@ -13,11 +13,19 @@ from botocore.exceptions import ClientError
 from discord.ext import commands, tasks
 from dotenv import dotenv_values
 
+# Need a better way to determine this
+if 'HOSTNAME' not in os.environ: # hostname is env var on ec2, not on local dev
+    DEV_MODE = True
+    _FILE_PREFIX = ''
+else:
+    DEV_MODE = False
+    _FILE_PREFIX = '/opt/invasion-bot/'
+
 # Load configuration
 try:
     config = {
-        **dotenv_values('.env'),
-        **dotenv_values('.env.secret'),
+        **dotenv_values(f'{_FILE_PREFIX}.env'),
+        **dotenv_values(f'{_FILE_PREFIX}.env.secret'),
         **os.environ # override .env vars with os environment vars
     }
 except Exception as e:
@@ -59,19 +67,11 @@ CITY_INFO = {
     }
 }
 
-# Need a better way to determine this
-if 'HOSTNAME' not in os.environ: # hostname is env var on ec2, not on local dev
-    DEV_MODE = True
-    log_file_name = config['LOG_FILE_NAME']
-    config['LOG_FILE_NAME'] = f"/opt/invasion-bot/{log_file_name}"
-else:
-    DEV_MODE = False
-
 # Configure logging
 try:
     logger = logging.getLogger(config['LOGGER_NAME'])
     logger.setLevel(logging.DEBUG)
-    file_handler = logging.FileHandler(config['LOG_FILE_NAME'])
+    file_handler = logging.FileHandler(f"{_FILE_PREFIX}{config['LOG_FILE_NAME']}")
     file_handler.setLevel(logging.DEBUG)
     file_format = logging.Formatter('%(asctime)s - %(name)-16s - %(levelname)-8s - %(message)s')
     file_handler.setFormatter(file_format)
