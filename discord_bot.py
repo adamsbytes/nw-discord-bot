@@ -1,5 +1,6 @@
 # discord_bot.py
 ''' This module runs the invasion-bot application'''
+# Disable line length (unavoidable), general exception (TODO), and logging with f-string
 # pylint: disable=C0301,W0703,W1203
 
 import datetime
