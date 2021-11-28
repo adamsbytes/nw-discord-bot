@@ -10,6 +10,7 @@
 
 import datetime
 import logging
+import math
 import os
 import sys
 
@@ -99,6 +100,14 @@ except ClientError as e:
 else:
     logger.debug('Initialized Boto3 dynamodb session')
 
+async def convert_hour_str_to_int(hour) -> int:
+    '''Intakes a string with style 08:00 PM and returns 24-hour format time int: 20'''
+    in_hour = int(hour.split(':')[0]) # split 08:00 PM style string to 08
+    in_ampm = hour.split(' ')[1] # split 08:00 PM style string to PM
+    if in_ampm == 'PM':
+        in_hour += 12
+    return in_hour
+
 async def get_city_name_from_term(term) -> str:
     '''Returns a string: city name match for [term] by matching it to the terms in the CITY_INFO dict'''
     logger.debug(f'Attempting to get_city_name_from_term({term})')
@@ -113,12 +122,14 @@ async def get_city_invasion_string(city, day=None) -> str:
     # verify today's invasions are actually for today, otherwise refresh data
     if CITY_INFO[city]['invasion_today_date'] != datetime.date.today().strftime('%Y-%m-%d'):
         await refresh_invasion_data()
+    siege_window_in_future = await is_hour_in_future(CITY_INFO[city]['siege_time'])
     if day is None: # both days
         # if invasion later and it is not siege time yet
-        if CITY_INFO[city]['invasion_today'] and is_siege_window_in_future(CITY_INFO[city]['siege_time']):
-            response = f"{city} has an invasion later today at {CITY_INFO[city]['siege_time']} EST"
+        if CITY_INFO[city]['invasion_today'] and siege_window_in_future:
+            duration_str = await get_time_til_hour(CITY_INFO[city]['siege_time'])
+            response = f"{city} has an invasion later today in {duration_str} at {CITY_INFO[city]['siege_time']} EST"
         # if invasion happened earlier today
-        if CITY_INFO[city]['invasion_today'] and not is_siege_window_in_future(CITY_INFO[city]['siege_time']):
+        if CITY_INFO[city]['invasion_today'] and not siege_window_in_future:
             response = f"{city} had an invasion earlier today at {CITY_INFO[city]['siege_time']} EST"
         # if invasion is tomorrow
         if CITY_INFO[city]['invasion_tomorrow']:
@@ -133,24 +144,45 @@ async def get_city_invasion_string(city, day=None) -> str:
             response = f"{city} does not have an invasion tomorrow!"
     else: # assume today otherwise
         # if invasion later and it is not siege time yet
-        if CITY_INFO[city]['invasion_today'] and is_siege_window_in_future(CITY_INFO[city]['siege_time']):
-            response = f"{city} has an invasion later today at {CITY_INFO[city]['siege_time']} EST"
+        if CITY_INFO[city]['invasion_today'] and siege_window_in_future:
+            duration_str = await get_time_til_hour(CITY_INFO[city]['siege_time'])
+            response = f"{city} has an invasion later today in {duration_str} at {CITY_INFO[city]['siege_time']} EST"
         # if invasion happened earlier today
-        if CITY_INFO[city]['invasion_today'] and not is_siege_window_in_future(CITY_INFO[city]['siege_time']):
+        if CITY_INFO[city]['invasion_today'] and not siege_window_in_future:
             response = f"{city} had an invasion earlier today at {CITY_INFO[city]['siege_time']} EST"
         # if no invasion today
         if not CITY_INFO[city]['invasion_today']:
             response = f"{city} does not have an invasion today!"
     return response
 
-async def is_siege_window_in_future(hour) -> bool:
-    '''Returns a bool that is True if siege window [time] is after now'''
-    logger(f'Attempting to determine if siege window is in future for: {hour}')
-    if hour <1 or hour > 24 or not isinstance(hour, int):
-        logger.exception(f'Cannot operate on hour: {hour}')
+async def get_time_til_hour(hour) -> str:
+    '''Returns a string with style 1h1m with the duration from now until [hour]'''
+    logger.debug(f'Attempting to get_time_til_hour() for: {hour}')
+    hour_int = await convert_hour_str_to_int(hour)
+    hour_24fmt = datetime.date.today().strftime('%Y-%m-%d') + \
+         ' ' + str(hour_int) + ':00:00'
+    now_24fmt = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    hour_obj = datetime.datetime.strptime(hour_24fmt, '%Y-%m-%d %H:%M:%S')
+    now_obj = datetime.datetime.strptime(now_24fmt, '%Y-%m-%d %H:%M:%S')
+    time_delta_seconds = (hour_obj - now_obj).total_seconds()
+    duration_hours = math.floor(time_delta_seconds / 3600)
+    remaining_seconds = time_delta_seconds - (duration_hours * 3600)
+    duration_minutes = math.floor(remaining_seconds / 60)
+    logger.debug(f'Completed get_time_til_hour() with result: {duration_hours}h{duration_minutes}m')
+    return f'{duration_hours}h{duration_minutes}m'
+
+async def is_hour_in_future(hour) -> bool:
+    '''Returns a bool that is True if [hour] is after now. Standard format: 8:00 PM'''
+    logger.debug(f'Attempting to determine if siege window is in future for: {hour}')
+    hour_int = await convert_hour_str_to_int(hour)
+    logger.debug(f'Converted hour to {hour_int}')
+    if hour_int <1 or hour_int > 24 or not isinstance(hour_int, int):
+        logger.exception(f'Cannot operate on hour: {hour_int}')
     time_now = datetime.datetime.now()
-    time_hour = time_now.replace(hour=hour)
-    return time_now < time_hour
+    time_hour = time_now.replace(hour=hour_int)
+    result = time_now < time_hour
+    logger.debug(f'Completed is_hour_in_future() with hour {hour_int} and got result: {result}')
+    return result
 
 def refresh_invasion_data(city:str = None) -> None:
     '''Gets invasion status from dynamodb for [city] or all cities if [city=None] (default)'''
@@ -259,13 +291,13 @@ async def all_invasions(ctx, day=None):
         # determine today's response
         if len(today_invasion_text) > 2:
             today_invasion_str = ', '.join(today_invasion_text)
-            today_response = f'Tonight there are {str(len(today_invasion_text))} invasions: {today_invasion_str}'
+            today_response = f'Today there are {str(len(today_invasion_text))} invasions: {today_invasion_str}'
         elif len(today_invasion_text) == 2:
-            today_response = f'Tonight there are 2 invasions: {today_invasion_text[0]} and {today_invasion_text[1]}'
+            today_response = f'Today there are 2 invasions: {today_invasion_text[0]} and {today_invasion_text[1]}'
         elif len(today_invasion_text) == 1:
-            today_response = f'Tonight there is one invasion: {today_invasion_text[0]}'
+            today_response = f'Today there is one invasion: {today_invasion_text[0]}'
         else:
-            today_response = 'There are no invasions happening tonight!'
+            today_response = 'There are no invasions happening today!'
     if day == 'tomorrow' or day is None:
         # this sorts tomorrow's invasions returned by their time
         sorted_partial = sorted(tomorrow_invasions, key = tomorrow_invasions.get)
