@@ -77,7 +77,7 @@ try:
     file_handler.setFormatter(file_format)
     logger.addHandler(file_handler)
 except Exception as e:
-    sys.exit(f'Could not initalize logger: {e}')
+    sys.exit(f"Could not initalize logger with name {config['LOGGER_NAME']}: {e}")
 else:
     logger.debug('Logger initialized')
 
