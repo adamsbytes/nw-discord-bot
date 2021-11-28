@@ -10,6 +10,7 @@
 
 import datetime
 import logging
+import math
 import os
 import sys
 
@@ -99,6 +100,14 @@ except ClientError as e:
 else:
     logger.debug('Initialized Boto3 dynamodb session')
 
+async def convert_hour_str_to_int(hour) -> int:
+    '''Intakes a string with style 08:00 PM and returns 24-hour format time int: 20'''
+    in_hour = hour.split(':')[0] # split 08:00 PM style string to 08
+    in_ampm = hour.split(' ')[1] # split 08:00 PM style string to PM
+    if in_ampm == 'PM':
+        in_hour += 12
+    return in_hour
+
 async def get_city_name_from_term(term) -> str:
     '''Returns a string: city name match for [term] by matching it to the terms in the CITY_INFO dict'''
     logger.debug(f'Attempting to get_city_name_from_term({term})')
@@ -145,24 +154,31 @@ async def get_city_invasion_string(city, day=None) -> str:
     return response
 
 async def get_time_til_hour(hour) -> str:
-    pass
+    '''Returns a string with style 1h1m with the duration from now until [hour]'''
+    logger.debug(f'Attempting to get_time_til_hour() for: {hour}')
+    hour_int = await convert_hour_str_to_int(hour)
+    hour_24fmt = datetime.date.today().strftime('%Y-%m-%d') + \
+         ' ' + str(hour_int) + ':00:00'
+    now_24fmt = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    hour_obj = datetime.datetime.strptime(hour_24fmt, '%Y-%m-%d %H:%M:%S')
+    now_obj = datetime.datetime.strptime(now_24fmt, '%Y-%m-%d %H:%M:%S')
+    time_delta_seconds = (hour_obj - now_obj).total_seconds()
+    duration_hours = math.floor(time_delta_seconds / 3600)
+    remaining_seconds = time_delta_seconds - (duration_hours * 3600)
+    duration_minutes = math.floor(remaining_seconds / 60)
+    return f'{duration_hours}h{duration_minutes}m'
 
 async def is_hour_in_future(hour) -> bool:
     '''Returns a bool that is True if [hour] is after now. Standard format: 8:00 PM'''
     logger.debug(f'Attempting to determine if siege window is in future for: {hour}')
-    # convert hour to 24-hour format
-    in_hour = hour.split(':')[0] # split 08:00 PM style string to 08
-    in_ampm = hour.split(' ')[1] # split 08:00 PM style string to PM
-    if in_ampm == 'PM':
-        in_hour += 12
-    hour = in_hour
-    logger.debug(f'Converted hour to {hour}')
-    if hour <1 or hour > 24 or not isinstance(hour, int):
-        logger.exception(f'Cannot operate on hour: {hour}')
+    hour_int = await convert_hour_str_to_int(hour)
+    logger.debug(f'Converted hour to {hour_int}')
+    if hour_int <1 or hour_int > 24 or not isinstance(hour_int, int):
+        logger.exception(f'Cannot operate on hour: {hour_int}')
     time_now = datetime.datetime.now()
-    time_hour = time_now.replace(hour=hour)
+    time_hour = time_now.replace(hour=hour_int)
     result = time_now < time_hour
-    logger.debug(f'Completed is_hour_in_future() with hour {hour} and got result: {result}')
+    logger.debug(f'Completed is_hour_in_future() with hour {hour_int} and got result: {result}')
     return result
 
 def refresh_invasion_data(city:str = None) -> None:
