@@ -14,7 +14,7 @@ from discord.ext import commands, tasks
 from dotenv import dotenv_values
 
 # Need a better way to determine this
-if 'HOSTNAME' not in os.environ: # hostname is env var on ec2, not on local dev
+if 'LOGNAME' not in os.environ: # logname is env var on ec2, not on local dev
     DEV_MODE = True
     _FILE_PREFIX = ''
 else:
