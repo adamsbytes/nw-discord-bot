@@ -1,0 +1,3 @@
+#!/bin/bash
+sleep 1 # give service time to start
+sudo systemctl is-active --quiet invasion-bot.service
