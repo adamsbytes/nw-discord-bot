@@ -188,8 +188,8 @@ def refresh_invasion_data(city:str = None) -> None:
             CITY_INFO[c_name]['invasion_today'] = False
         CITY_INFO[c_name]['invasion_today_date'] = today_search_date
         logger.debug(f"Determined today's invasion status: {CITY_INFO[c_name]['invasion_today']}")
-        # Get tomorrow's invasions     
-        logger.debug(f"Attempting to find tomorrow's invasions in table: {city_db_table}") 
+        # Get tomorrow's invasions
+        logger.debug(f"Attempting to find tomorrow's invasions in table: {city_db_table}")
         tomorrow_search_date = str((datetime.date.today() + datetime.timedelta(days=1)).strftime('%Y-%m-%d'))
         response = db.get_item(
             TableName=city_db_table,
@@ -241,33 +241,54 @@ async def invasion(ctx, city, day=None):
         response = f'Invalid response for [day], expected [today, tomorrow] got [{day}]'
     await ctx.send(response)
 
-@bot.command(name='invasions', help='Responds with all invasions happening today')
+@bot.command(name='invasions', help='Responds with all invasions happening in the next two days')
 async def all_invasions(ctx):
     '''Responds to !invasions command with all invasions happening today sorted by time'''
     logger.info('!invasions invoked')
-    invasions = {}
+    # refresh data if data came from a different day
+    today_invasions = {}
+    tomorrow_invasions = {}
     for city in CITY_INFO:
+        if CITY_INFO[city]['invasion_today_date'] != datetime.date.today().strftime('%Y-%m-%d'):
+            await refresh_invasion_data()
         if CITY_INFO[city]['invasion_today']:
-            logger.debug(f"Found invasion in {city} at {CITY_INFO[city]['siege_time']}")
-            invasions[city] = f"{CITY_INFO[city]['siege_time']}"
-    logger.debug(f'Total invasions found: {str(len(invasions.keys()))}')
-    # this sorts the invasions returned by their time
-    sorted_partial = sorted(invasions, key = invasions.get)
-    invasion_text = []
-    print(sorted_partial)
+            logger.debug(f"Found invasion today in {city} at {CITY_INFO[city]['siege_time']}")
+            today_invasions[city] = f"{CITY_INFO[city]['siege_time']}"
+        if CITY_INFO[city]['invasion_tomorrow']:
+            logger.debug(f"Found invasion tomorrow in {city} at {CITY_INFO[city]['siege_time']}")
+            tomorrow_invasions[city] = f"{CITY_INFO[city]['siege_time']}"
+    logger.debug(f'Total invasions found: {str(len(today_invasions.keys()) + len(tomorrow_invasions.keys()))}')
+    # this sorts today's invasions returned by their time
+    sorted_partial = sorted(today_invasions, key = today_invasions.get)
+    today_invasion_text = []
     for key in sorted_partial:
-        print(invasions[key])
-        invasion_text.append(f'{key} at {invasions[key]} EST')
-
-    if len(invasion_text) > 2:
-        invasion_str = ', '.join(invasion_text)
-        response = f'Tonight there are {str(len(invasion_text))} invasions: {invasion_str}'
-    elif len(invasion_text) == 2:
-        response = f'Tonight there are 2 invasions: {invasion_text[0]} and {invasion_text[1]}'
-    elif len(invasion_text) == 1:
-        response = f'Tonight there is one invasion: {invasion_text[0]}'
+        today_invasion_text.append(f'{key} at {today_invasions[key]} EST')
+    # this sorts tomorrow's invasions returned by their time
+    sorted_partial = sorted(tomorrow_invasions, key = tomorrow_invasions.get)
+    tomorrow_invasion_text = []
+    for key in sorted_partial:
+        tomorrow_invasion_text.append(f'{key} at {tomorrow_invasions[key]} EST')
+    # determine today's response
+    if len(today_invasion_text) > 2:
+        today_invasion_str = ', '.join(today_invasion_text)
+        today_response = f'Tonight there are {str(len(today_invasion_text))} invasions: {today_invasion_str}'
+    elif len(today_invasion_text) == 2:
+        today_response = f'Tonight there are 2 invasions: {today_invasion_text[0]} and {today_invasion_text[1]}'
+    elif len(today_invasion_text) == 1:
+        today_response = f'Tonight there is one invasion: {today_invasion_text[0]}'
     else:
-        response = 'There are no invasions happening tonight!'
+        today_response = 'There are no invasions happening tonight!'
+    # determine tomorrow's response
+    if len(tomorrow_invasion_text) > 2:
+        tomorrow_invasion_str = ', '.join(tomorrow_invasion_text)
+        tomorrow_response = f'Tomorrow there are {str(len(tomorrow_invasion_text))} invasions: {tomorrow_invasion_str}'
+    elif len(today_invasion_text) == 2:
+        tomorrow_response = f'Tomorrow there are 2 invasions: {tomorrow_invasion_text[0]} and {tomorrow_invasion_text[1]}'
+    elif len(today_invasion_text) == 1:
+        tomorrow_response = f'Tomorrow there is one invasion: {tomorrow_invasion_text[0]}'
+    else:
+        tomorrow_response = 'There are no invasions happening tomorrow!'
+    response = today_response + '\n' + tomorrow_response
     await ctx.send(response)
 
 @bot.command(name='windows', help='Responds with all siege windows in the server')
