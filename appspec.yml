@@ -5,16 +5,13 @@ files:
    destination: /opt/invasion-bot
 hooks:
   BeforeInstall:
-    - location: scripts/stop_bot
+    - location: scripts/cleanup_directory
       timeout: 300
       runas: root
   AfterInstall:
-    - location: scripts/set_permissions
+    - location: scripts/set_permissions_and_install_deps
       timeout: 300
       runas: root
-    - location: scripts/install_app_dependencies
-      timeout: 300
-      runas: bot-user
   ApplicationStart:
     - location: scripts/start_bot
       timeout: 300
