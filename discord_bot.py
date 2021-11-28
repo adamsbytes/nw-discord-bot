@@ -259,13 +259,13 @@ async def all_invasions(ctx, day=None):
         # determine today's response
         if len(today_invasion_text) > 2:
             today_invasion_str = ', '.join(today_invasion_text)
-            today_response = f'Tonight there are {str(len(today_invasion_text))} invasions: {today_invasion_str}'
+            today_response = f'Today there are {str(len(today_invasion_text))} invasions: {today_invasion_str}'
         elif len(today_invasion_text) == 2:
-            today_response = f'Tonight there are 2 invasions: {today_invasion_text[0]} and {today_invasion_text[1]}'
+            today_response = f'Today there are 2 invasions: {today_invasion_text[0]} and {today_invasion_text[1]}'
         elif len(today_invasion_text) == 1:
-            today_response = f'Tonight there is one invasion: {today_invasion_text[0]}'
+            today_response = f'Today there is one invasion: {today_invasion_text[0]}'
         else:
-            today_response = 'There are no invasions happening tonight!'
+            today_response = 'There are no invasions happening today!'
     if day == 'tomorrow' or day is None:
         # this sorts tomorrow's invasions returned by their time
         sorted_partial = sorted(tomorrow_invasions, key = tomorrow_invasions.get)
