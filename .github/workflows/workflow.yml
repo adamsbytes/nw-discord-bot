@@ -25,7 +25,7 @@ jobs:
           aws-region: us-east-1
       # Step 5
       - name: Lint the application
-        run: pylint
+        run: pylint ./*.py
 
   continuous-deployment:
     runs-on: ubuntu-latest
