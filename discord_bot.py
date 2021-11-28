@@ -1,14 +1,16 @@
 # discord_bot.py
+''' This module runs the invasion-bot application'''
+# pylint: disable=C0301,W0703,W1203
 
-from botocore.exceptions import ClientError
-from discord.ext import commands, tasks
-from dotenv import dotenv_values
-
-import boto3
 import datetime
 import logging
 import os
 import sys
+
+import boto3
+from botocore.exceptions import ClientError
+from discord.ext import commands, tasks
+from dotenv import dotenv_values
 
 # Load configuration
 try:
@@ -78,14 +80,15 @@ try:
     else:
         logger.debug('Attempting to initialize dev Boto3 dynamodb session')
         db = boto3.Session(profile_name=config['DEV_AWS_PROFILE']).client('dynamodb')
-except Exception as e:
+except ClientError as e:
     logger.exception('Failed to initalize boto3 session')
 else:
     logger.debug('Initialized Boto3 dynamodb session')
 
 def get_city_name_from_term(term) -> str:
+    '''Returns a string: city name match for [term] by matching it to the terms in the CITY_INFO dict'''
     logger.debug(f'Attempting to get_city_name_from_term({term})')
-    for city in CITY_INFO:
+    for city in CITY_INFO.items():
         logger.debug(f'Searching {city}')
         if term in CITY_INFO[city]['search_terms']:
             logger.debug(f'Found {term} in {city}')
@@ -94,15 +97,16 @@ def get_city_name_from_term(term) -> str:
     return city_name
 
 def refresh_invasion_data(city:str = None) -> None:
-    logger.debug(f'Attempting to refresh_invasion_data({city})')    
+    '''Gets invasion status from dynamodb for [city] or all cities if [city=None] (default)'''
+    logger.debug(f'Attempting to refresh_invasion_data({city})')
     if city:
         cities_to_refresh = [city]
     else:
         cities_to_refresh = list(CITY_INFO.keys())
 
-    for c in cities_to_refresh:
-        logger.debug(f'Refreshing data in {c}')
-        city_name = ''.join(e for e in c if e.isalnum()).lower()
+    for c_name in cities_to_refresh:
+        logger.debug(f'Refreshing data in {c_name}')
+        city_name = ''.join(e for e in c_name if e.isalnum()).lower()
         city_db_table = f"{config['EVENT_TABLE_PREFIX']}{city_name}"
         response = db.get_item(
             TableName=city_db_table,
@@ -112,12 +116,13 @@ def refresh_invasion_data(city:str = None) -> None:
         )
         logger.debug(f'Response from db: {response}')
         if 'Item' in response:
-            CITY_INFO[c]['invasion_today'] = True
+            CITY_INFO[c_name]['invasion_today'] = True
         else:
-            CITY_INFO[c]['invasion_today'] = False
-        logger.debug(f"Determined invasion status: {CITY_INFO[c]['invasion_today']}")
+            CITY_INFO[c_name]['invasion_today'] = False
+        logger.debug(f"Determined invasion status: {CITY_INFO[c_name]['invasion_today']}")
 
 def refresh_siege_window(city:str = None) -> None:
+    '''Gets siege window data from dynamodb for [city] or all cities if [city=None] (default)'''
     logger.debug(f'Attempting to refresh_siege_window({city})')
     table_name = config['SIEGE_INFO_TABLE_NAME']
 
@@ -126,19 +131,20 @@ def refresh_siege_window(city:str = None) -> None:
     else:
         cities_to_refresh = list(CITY_INFO.keys())
 
-    for c in cities_to_refresh:
-        logger.debug(f'Refreshing data in {c}')
+    for city_name in cities_to_refresh:
+        logger.debug(f'Refreshing data in {city_name}')
         response = db.get_item(
             TableName=table_name,
             Key = {
-                'city': {'S': c}
+                'city': {'S': city_name}
             }
         )
-        CITY_INFO[c]['siege_time'] = response['Item']['time']['S']
-        logger.debug(f"Determined siege time in {c}: {CITY_INFO[c]['siege_time']}")
+        CITY_INFO[city_name]['siege_time'] = response['Item']['time']['S']
+        logger.debug(f"Determined siege time in {city_name}: {CITY_INFO[city_name]['siege_time']}")
 
 @bot.command(name='city', help='Responds with the siege window and invasion status for a city')
 async def invasion(ctx, city):
+    '''Responds to !invasion [city] command with the invasion status and siege window for [city]'''
     logger.info(f'!invasion invoked for {city}')
     city = get_city_name_from_term(city)
     logger.debug(f'Reformatted city name to {city}')
@@ -151,9 +157,10 @@ async def invasion(ctx, city):
 
 @bot.command(name='invasions', help='Responds with all invasions happening today')
 async def all_invasions(ctx):
-    logger.info(f'!invasions invoked')
+    '''Responds to !invasions command with all invasions happening today sorted by time'''
+    logger.info('!invasions invoked')
     invasions = {}
-    for city in CITY_INFO.keys():
+    for city in CITY_INFO.items():
         if CITY_INFO[city]['invasion_today']:
             logger.debug(f"Found invasion in {city} at {CITY_INFO[city]['siege_time']}")
             invasions[city] = f"{CITY_INFO[city]['siege_time']}"
@@ -174,12 +181,13 @@ async def all_invasions(ctx):
     elif len(invasion_text) == 1:
         response = f'Tonight there is one invasion: {invasion_text[0]}'
     else:
-        response = f'There are no invasions happening tonight!'
+        response = 'There are no invasions happening tonight!'
     await ctx.send(response)
 
 @bot.command(name='windows', help='Responds with all siege windows in the server')
 async def windows(ctx):
-    logger.info(f'!windows invoked')
+    '''Respods to !windows command with a list of siege windows sorted alphabetically'''
+    logger.info('!windows invoked')
     window_texts = ['The server siege windows are:']
     cities = []
     for key in CITY_INFO:
@@ -193,6 +201,7 @@ async def windows(ctx):
 
 @tasks.loop(hours = 2)
 async def info_gather():
+    '''Executes referesh_invasion_data and refresh_siege_window every two hours'''
     logger.info('Attempting to run scheduled task info_gather()')
     refresh_invasion_data()
     refresh_siege_window()
