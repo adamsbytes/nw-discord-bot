@@ -17,6 +17,13 @@ from botocore.exceptions import ClientError
 from discord.ext import commands, tasks
 from dotenv import dotenv_values
 
+# Branch log:
+# Changed functions to async/await where possible
+
+# TODO: get tomorrow's invasions in the collector using the upcoming but no timeframe to identify
+# TODO: let !invasions tonight/tomorrow/none(all)
+# TODO: let !city show invasions for tonight/tomorrow
+
 # Need a better way to determine this
 if 'LOGNAME' not in os.environ: # logname is env var on ec2, not on local dev
     DEV_MODE = True
@@ -98,16 +105,14 @@ except ClientError as e:
 else:
     logger.debug('Initialized Boto3 dynamodb session')
 
-def get_city_name_from_term(term) -> str:
+async def get_city_name_from_term(term) -> str:
     '''Returns a string: city name match for [term] by matching it to the terms in the CITY_INFO dict'''
     logger.debug(f'Attempting to get_city_name_from_term({term})')
     for city in CITY_INFO:
         logger.debug(f'Searching {city}')
         if term in CITY_INFO[city]['search_terms']:
             logger.debug(f'Found {term} in {city}')
-            city_name = city
-            break
-    return city_name
+            return city
 
 def refresh_invasion_data(city:str = None) -> None:
     '''Gets invasion status from dynamodb for [city] or all cities if [city=None] (default)'''
@@ -159,7 +164,7 @@ def refresh_siege_window(city:str = None) -> None:
 async def invasion(ctx, city):
     '''Responds to !invasion [city] command with the invasion status and siege window for [city]'''
     logger.info(f'!invasion invoked for {city}')
-    city = get_city_name_from_term(city)
+    city = await get_city_name_from_term(city)
     logger.debug(f'Reformatted city name to {city}')
     logger.debug(f"Invasion status for {city}: {str(CITY_INFO[city]['invasion_today'])}")
     if CITY_INFO[city]['invasion_today']:
