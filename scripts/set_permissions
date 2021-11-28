@@ -1,3 +1,0 @@
-#!/bin/bash
-sudo chown -R bot-user:bot-user /opt/invasion-bot
-sudo chmod +x /opt/invasion-bot/discord_bot.py
