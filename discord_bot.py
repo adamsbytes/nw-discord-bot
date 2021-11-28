@@ -103,7 +103,7 @@ else:
 async def convert_time_str_to_min_sec(hour) -> int:
     '''Intakes a string with style 08:30 PM and returns 24-hour format time int: 20'''
     in_hour = int(hour.split(':')[0]) # split 08:30 PM style string to 08
-    in_minute = hour.split(':')[1].split(' ')[0] # split 8:00 PM style string to 30
+    in_minute = int(hour.split(':')[1].split(' ')[0]) # split 8:00 PM style string to 30
     in_ampm = hour.split(' ')[1] # split 08:30 PM style string to PM
     if in_ampm == 'PM':
         in_hour += 12
@@ -168,15 +168,18 @@ async def get_time_til_hour(hour) -> str:
     time_delta_seconds = (hour_obj - now_obj).total_seconds()
     duration_hours = math.floor(time_delta_seconds / 3600)
     remaining_seconds = time_delta_seconds - (duration_hours * 3600)
-    duration_minutes = math.floor(remaining_seconds / 60)
+    duration_minutes = math.ceil(remaining_seconds / 60)
+    if duration_minutes == 60:
+        duration_hours += 1
+        duration_minutes = 0
     logger.debug(f'Completed get_time_til_hour() with result: {duration_hours}h{duration_minutes}m')
     return f'{duration_hours}h{duration_minutes}m'
 
 async def is_hour_in_future(hour) -> bool:
     '''Returns a bool that is True if [hour] is after now. Standard format: 8:00 PM'''
-    logger.debug(f'Attempting to determine if siege window is in future for: {hour}')
+    logger.debug(f'Attempting to is_hour_in_future() for: {hour}')
     hour_int, minute_int = await convert_time_str_to_min_sec(hour)
-    logger.debug(f'Converted hour to {hour_int}')
+    logger.debug(f'Converted hour to {hour_int}, minute to {minute_int}')
     if hour_int <1 or hour_int > 24 or not isinstance(hour_int, int):
         logger.exception(f'Cannot operate on hour: {hour_int}')
     time_now = datetime.datetime.now()
