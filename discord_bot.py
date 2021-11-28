@@ -102,7 +102,7 @@ else:
 
 async def convert_hour_str_to_int(hour) -> int:
     '''Intakes a string with style 08:00 PM and returns 24-hour format time int: 20'''
-    in_hour = hour.split(':')[0] # split 08:00 PM style string to 08
+    in_hour = int(hour.split(':')[0]) # split 08:00 PM style string to 08
     in_ampm = hour.split(' ')[1] # split 08:00 PM style string to PM
     if in_ampm == 'PM':
         in_hour += 12
