@@ -42,7 +42,7 @@ jobs:
       - name: Create CodeDeploy Deployment
         id: deploy
         run: |
-          deploy_id_json = $(aws deploy create-deployment \
+          deploy_id_json=$(aws deploy create-deployment \
             --application-name invasion-discord-bot \
             --deployment-group-name invasion-bot-deploy-group \
             --deployment-config-name CodeDeployDefault.OneAtATime \
