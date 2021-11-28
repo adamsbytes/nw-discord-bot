@@ -230,8 +230,8 @@ def refresh_siege_window(city:str = None) -> None:
 
 @bot.command(name='city', help='Responds with the siege window and invasion status for a city')
 async def invasion(ctx, city, day=None):
-    '''Responds to !invasion [city] [day] command with the invasion status and siege window for [city] on [day]'''
-    logger.info(f'!invasion invoked for {city} on {day}')
+    '''Responds to !city [city] [day] command with the invasion status and siege window for [city] on [day]'''
+    logger.info(f'!city invoked for {city} on {day}')
     city = await get_city_name_from_term(city)
     logger.debug(f'Reformatted city name to {city}')
     # if times are valid values
