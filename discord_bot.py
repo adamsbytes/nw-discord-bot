@@ -100,13 +100,14 @@ except ClientError as e:
 else:
     logger.debug('Initialized Boto3 dynamodb session')
 
-async def convert_hour_str_to_int(hour) -> int:
-    '''Intakes a string with style 08:00 PM and returns 24-hour format time int: 20'''
-    in_hour = int(hour.split(':')[0]) # split 08:00 PM style string to 08
-    in_ampm = hour.split(' ')[1] # split 08:00 PM style string to PM
+async def convert_time_str_to_min_sec(hour) -> int:
+    '''Intakes a string with style 08:30 PM and returns 24-hour format time int: 20'''
+    in_hour = int(hour.split(':')[0]) # split 08:30 PM style string to 08
+    in_minute = hour.split(':')[1].split(' ')[0] # split 8:00 PM style string to 30
+    in_ampm = hour.split(' ')[1] # split 08:30 PM style string to PM
     if in_ampm == 'PM':
         in_hour += 12
-    return in_hour
+    return in_hour, in_minute
 
 async def get_city_name_from_term(term) -> str:
     '''Returns a string: city name match for [term] by matching it to the terms in the CITY_INFO dict'''
@@ -156,11 +157,11 @@ async def get_city_invasion_string(city, day=None) -> str:
     return response
 
 async def get_time_til_hour(hour) -> str:
-    '''Returns a string with style 1h1m with the duration from now until [hour]'''
+    '''Returns a string with style 1h1m with the duration from now until [hour] with style 08:30 PM'''
     logger.debug(f'Attempting to get_time_til_hour() for: {hour}')
-    hour_int = await convert_hour_str_to_int(hour)
+    hour_int, minute_int = await convert_time_str_to_min_sec(hour)
     hour_24fmt = datetime.date.today().strftime('%Y-%m-%d') + \
-         ' ' + str(hour_int) + ':00:00'
+         f' {str(hour_int)}:{str(minute_int)}:00'
     now_24fmt = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     hour_obj = datetime.datetime.strptime(hour_24fmt, '%Y-%m-%d %H:%M:%S')
     now_obj = datetime.datetime.strptime(now_24fmt, '%Y-%m-%d %H:%M:%S')
@@ -174,14 +175,14 @@ async def get_time_til_hour(hour) -> str:
 async def is_hour_in_future(hour) -> bool:
     '''Returns a bool that is True if [hour] is after now. Standard format: 8:00 PM'''
     logger.debug(f'Attempting to determine if siege window is in future for: {hour}')
-    hour_int = await convert_hour_str_to_int(hour)
+    hour_int, minute_int = await convert_time_str_to_min_sec(hour)
     logger.debug(f'Converted hour to {hour_int}')
     if hour_int <1 or hour_int > 24 or not isinstance(hour_int, int):
         logger.exception(f'Cannot operate on hour: {hour_int}')
     time_now = datetime.datetime.now()
-    time_hour = time_now.replace(hour=hour_int)
+    time_hour = time_now.replace(hour=hour_int, minute=minute_int)
     result = time_now < time_hour
-    logger.debug(f'Completed is_hour_in_future() with hour {hour_int} and got result: {result}')
+    logger.debug(f'Completed is_hour_in_future() with hour {hour_int}:{minute_int} and got result: {result}')
     return result
 
 def refresh_invasion_data(city:str = None) -> None:
