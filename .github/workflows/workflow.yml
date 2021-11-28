@@ -42,8 +42,9 @@ jobs:
       - name: Create CodeDeploy Deployment
         id: deploy
         run: |
-          aws deploy create-deployment \
+          readarray -t deploy_array < <(aws deploy create-deployment \
             --application-name invasion-discord-bot \
             --deployment-group-name invasion-bot-deploy-group \
             --deployment-config-name CodeDeployDefault.OneAtATime \
-            --github-location repository=${{ github.repository }},commitId=${{ github.sha }}
+            --github-location repository=${{ github.repository }},commitId=${{ github.sha }})
+          declare -p deploy_array
