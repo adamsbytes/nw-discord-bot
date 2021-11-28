@@ -9,6 +9,9 @@ hooks:
       timeout: 300
       runas: root
   AfterInstall:
+    - location: scripts/set_permissions
+      timeout: 300
+      runas: root
     - location: scripts/install_app_dependencies
       timeout: 300
       runas: bot-user
