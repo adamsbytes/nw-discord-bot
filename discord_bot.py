@@ -62,7 +62,8 @@ CITY_INFO = {
 # Need a better way to determine this
 if 'HOSTNAME' not in os.environ: # hostname is env var on ec2, not on local dev
     DEV_MODE = True
-    config['LOG_FILE_NAME'] = f"/opt/invasion-bot/{config['LOG_FILE_NAME']}"
+    log_file_name = config['LOG_FILE_NAME']
+    config['LOG_FILE_NAME'] = f"/opt/invasion-bot/{log_file_name}"
 else:
     DEV_MODE = False
 
