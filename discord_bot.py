@@ -20,7 +20,6 @@ from dotenv import dotenv_values
 # Branch log:
 # Changed functions to async/await where possible
 
-# TODO: get tomorrow's invasions in the collector using the upcoming but no timeframe to identify
 # TODO: let !invasions tonight/tomorrow/none(all)
 # TODO: let !city show invasions for tonight/tomorrow
 
@@ -126,6 +125,8 @@ def refresh_invasion_data(city:str = None) -> None:
         logger.debug(f'Refreshing data in {c_name}')
         city_name = ''.join(e for e in c_name if e.isalnum()).lower()
         city_db_table = f"{config['EVENT_TABLE_PREFIX']}{city_name}"
+        # Get today's invasions
+        logger.debug(f"Attempting to find today's invasions in table: {city_db_table}")
         response = db.get_item(
             TableName=city_db_table,
             Key = {
@@ -137,7 +138,22 @@ def refresh_invasion_data(city:str = None) -> None:
             CITY_INFO[c_name]['invasion_today'] = True
         else:
             CITY_INFO[c_name]['invasion_today'] = False
-        logger.debug(f"Determined invasion status: {CITY_INFO[c_name]['invasion_today']}")
+        logger.debug(f"Determined today's invasion status: {CITY_INFO[c_name]['invasion_today']}")
+        # Get tomorrow's invasions     
+        logger.debug(f"Attempting to find tomorrow's invasions in table: {city_db_table}")   
+        response = db.get_item(
+            TableName=city_db_table,
+            Key = {
+                'date': {'S': str((datetime.date.today() + datetime.timedelta(days=1)).strftime('%Y-%m-%d'))}
+            }
+        )
+        logger.debug(f'Response from db: {response}')
+        if 'Item' in response:
+            CITY_INFO[c_name]['invasion_tomorrow'] = True
+        else:
+            CITY_INFO[c_name]['invasion_tomorrow'] = False
+        logger.debug(f"Determined tomorrow's invasion status: {CITY_INFO[c_name]['invasion_tomorrow']}")
+    logger.debug('Completed running refresh_invasion_data()')
 
 def refresh_siege_window(city:str = None) -> None:
     '''Gets siege window data from dynamodb for [city] or all cities if [city=None] (default)'''
@@ -159,6 +175,7 @@ def refresh_siege_window(city:str = None) -> None:
         )
         CITY_INFO[city_name]['siege_time'] = response['Item']['time']['S']
         logger.debug(f"Determined siege time in {city_name}: {CITY_INFO[city_name]['siege_time']}")
+    logger.debug('Completed running refresh_siege_window()')
 
 @bot.command(name='city', help='Responds with the siege window and invasion status for a city')
 async def invasion(ctx, city):
