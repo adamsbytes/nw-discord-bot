@@ -97,7 +97,7 @@ else:
 def get_city_name_from_term(term) -> str:
     '''Returns a string: city name match for [term] by matching it to the terms in the CITY_INFO dict'''
     logger.debug(f'Attempting to get_city_name_from_term({term})')
-    for city in CITY_INFO.items():
+    for city in CITY_INFO:
         logger.debug(f'Searching {city}')
         if term in CITY_INFO[city]['search_terms']:
             logger.debug(f'Found {term} in {city}')
@@ -169,7 +169,7 @@ async def all_invasions(ctx):
     '''Responds to !invasions command with all invasions happening today sorted by time'''
     logger.info('!invasions invoked')
     invasions = {}
-    for city in CITY_INFO.items():
+    for city in CITY_INFO:
         if CITY_INFO[city]['invasion_today']:
             logger.debug(f"Found invasion in {city} at {CITY_INFO[city]['siege_time']}")
             invasions[city] = f"{CITY_INFO[city]['siege_time']}"
