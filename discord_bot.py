@@ -126,7 +126,8 @@ async def get_city_invasion_string(city, day=None) -> str:
     if day is None: # both days
         # if invasion later and it is not siege time yet
         if CITY_INFO[city]['invasion_today'] and siege_window_in_future:
-            response = f"{city} has an invasion later today at {CITY_INFO[city]['siege_time']} EST"
+            duration_str = await get_time_til_hour(CITY_INFO[city]['siege_time'])
+            response = f"{city} has an invasion later today in {duration_str} at {CITY_INFO[city]['siege_time']} EST"
         # if invasion happened earlier today
         if CITY_INFO[city]['invasion_today'] and not siege_window_in_future:
             response = f"{city} had an invasion earlier today at {CITY_INFO[city]['siege_time']} EST"
@@ -144,7 +145,8 @@ async def get_city_invasion_string(city, day=None) -> str:
     else: # assume today otherwise
         # if invasion later and it is not siege time yet
         if CITY_INFO[city]['invasion_today'] and siege_window_in_future:
-            response = f"{city} has an invasion later today at {CITY_INFO[city]['siege_time']} EST"
+            duration_str = await get_time_til_hour(CITY_INFO[city]['siege_time'])
+            response = f"{city} has an invasion later today in {duration_str} at {CITY_INFO[city]['siege_time']} EST"
         # if invasion happened earlier today
         if CITY_INFO[city]['invasion_today'] and not siege_window_in_future:
             response = f"{city} had an invasion earlier today at {CITY_INFO[city]['siege_time']} EST"
@@ -166,6 +168,7 @@ async def get_time_til_hour(hour) -> str:
     duration_hours = math.floor(time_delta_seconds / 3600)
     remaining_seconds = time_delta_seconds - (duration_hours * 3600)
     duration_minutes = math.floor(remaining_seconds / 60)
+    logger.debug(f'Completed get_time_til_hour() with result: {duration_hours}h{duration_minutes}m')
     return f'{duration_hours}h{duration_minutes}m'
 
 async def is_hour_in_future(hour) -> bool:
