@@ -1,3 +1,4 @@
+apscheduler
 boto3
 discord.py
 discord-py-slash-command
