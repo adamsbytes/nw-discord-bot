@@ -219,7 +219,7 @@ async def is_hour_in_future(hour) -> bool:
     logger.debug(f'Completed is_hour_in_future() with hour {hour_int}:{minute_int} and got result: {result}')
     return result
 
-def refresh_invasion_data(city:str = None) -> None:
+async def refresh_invasion_data(city:str = None) -> None:
     '''Gets invasion status from dynamodb for [city] or all cities if [city=None] (default)'''
     logger.debug(f'Attempting to refresh_invasion_data({city})')
     if city:
@@ -263,7 +263,7 @@ def refresh_invasion_data(city:str = None) -> None:
             logger.debug(f"Determined no invasion is happening tomorrow in {c_name}")
     logger.debug('Completed running refresh_invasion_data()')
 
-def refresh_siege_window(city:str = None) -> None:
+async def refresh_siege_window(city:str = None) -> None:
     '''Gets siege window data from dynamodb for [city] or all cities if [city=None] (default)'''
     logger.debug(f'Attempting to refresh_siege_window({city})')
     table_name = config['SIEGE_INFO_TABLE_NAME']
@@ -432,8 +432,8 @@ async def windows(ctx):
 async def info_gather():
     '''Executes referesh_invasion_data and refresh_siege_window every hour or on command'''
     logger.info('Attempting to run scheduled task info_gather()')
-    refresh_invasion_data()
-    refresh_siege_window()
+    await refresh_invasion_data()
+    await refresh_siege_window()
     logger.info('Completed running scheduled task info_gather()')
 
 bot.run(config['DISCORD_TOKEN'])
