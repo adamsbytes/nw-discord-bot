@@ -1,18 +1,20 @@
 # discord_bot.py
 ''' This module runs the invasion-bot application'''
 # Disable:
-#   dict-items poor suggestion
-#   line length (unavoidable)
-#   too many branches (TODO)
-#   general exception (TODO)
-#   logging with f-string
-# pylint: disable=C0206,C0301,R0912,W0703,W1203
+#   C0206: dict-items (poor suggestion, may revist)
+#   C0301: line length (unavoidable)
+#   R0912: too many branches (TODO)
+#   R0915: too many statements (TODO)
+#   W0703: exception is too general (TODO)
+#   W1203: logging with f-string (this works fine, plan to continue using)
+# pylint: disable=C0206,C0301,R0912,R0915,W0703,W1203
 
 import datetime
 import logging
 import math
 import os
 import sys
+from logging.handlers import RotatingFileHandler
 
 import boto3
 import discord
@@ -58,7 +60,14 @@ CITY_INFO = {
 try:
     logger = logging.getLogger(config['LOGGER_NAME'])
     logger.setLevel(logging.DEBUG)
-    file_handler = logging.FileHandler(f"{_FILE_PREFIX}{config['LOG_FILE_NAME']}")
+    if DEV_MODE: # no need for rotating logs while developing
+        file_handler = logging.FileHandler(f"{_FILE_PREFIX}{config['LOG_FILE_NAME']}")
+    else:
+        file_handler = RotatingFileHandler(
+            f"{_FILE_PREFIX}{config['LOG_FILE_NAME']}",
+            maxBytes=2097152,
+            backupCount=3
+        ) # keeps up to 4 2MB logs
     file_handler.setLevel(logging.DEBUG)
     file_format = logging.Formatter('%(asctime)s - %(name)-16s - %(levelname)-8s - %(message)s')
     file_handler.setFormatter(file_format)
@@ -237,6 +246,16 @@ for city_choice_name in CITY_INFO:
             value=city_choice_name
         )
     )
+day_slash_choice_list = [
+    create_choice(
+        name='Today',
+        value='today'
+    ),
+    create_choice(
+        name='Tomorrow',
+        value='tomorrow'
+    )
+]
 @slash.slash(name='city',
             description='Responds with the siege window and invasion status for a city',
             options=[
@@ -252,16 +271,7 @@ for city_choice_name in CITY_INFO:
                     description='The day you would like information for, default is today and tomorrow',
                     option_type=3,
                     required=False,
-                    choices=[
-                        create_choice(
-                            name='Today',
-                            value='today'
-                        ),
-                        create_choice(
-                            name='Tomorrow',
-                            value='tomorrow'
-                        )
-                    ]
+                    choices=day_slash_choice_list
                 )
             ])
 async def invasion(ctx, city: str, day: str = None):
@@ -275,23 +285,14 @@ async def invasion(ctx, city: str, day: str = None):
     await ctx.send(response)
 
 @slash.slash(name='invasions',
-            description='Responds with all invasions happening in the next two days, you can optionally specify the day',
+            description='Responds with all invasions happening in the next two days',
             options=[
                 create_option(
                     name='day',
                     description='The day you would like information for, default is today and tomorrow',
                     option_type=3,
                     required=False,
-                    choices=[
-                        create_choice(
-                            name='Today',
-                            value='today'
-                        ),
-                        create_choice(
-                            name='Tomorrow',
-                            value='tomorrow'
-                        )
-                    ]
+                    choices=day_slash_choice_list
                 )
             ]
 )
