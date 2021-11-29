@@ -1,4 +1,5 @@
 boto3
 discord.py
+discord-py-slash-command
 pylint
 python-dotenv

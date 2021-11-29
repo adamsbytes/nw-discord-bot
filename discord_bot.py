@@ -1,22 +1,27 @@
 # discord_bot.py
 ''' This module runs the invasion-bot application'''
 # Disable:
-#   dict-items poor suggestion
-#   line length (unavoidable)
-#   too many branches (TODO)
-#   general exception (TODO)
-#   logging with f-string
-# pylint: disable=C0206,C0301,R0912,W0703,W1203
+#   C0206: dict-items (poor suggestion, may revist)
+#   C0301: line length (unavoidable)
+#   R0912: too many branches (TODO)
+#   R0915: too many statements (TODO)
+#   W0703: exception is too general (TODO)
+#   W1203: logging with f-string (this works fine, plan to continue using)
+# pylint: disable=C0206,C0301,R0912,R0915,W0703,W1203
 
 import datetime
 import logging
 import math
 import os
 import sys
+from logging.handlers import RotatingFileHandler
 
 import boto3
+import discord
 from botocore.exceptions import ClientError
-from discord.ext import commands, tasks
+from discord.ext import tasks
+from discord_slash import SlashCommand
+from discord_slash.utils.manage_commands import create_choice, create_option
 from dotenv import dotenv_values
 
 # Need a better way to determine this
@@ -38,46 +43,31 @@ except Exception as e:
     sys.exit(f'Failed to load configuration: {e}')
 
 CITY_INFO = {
-    "Monarch's Bluffs": {
-        'search_terms': ["Monarch's Bluffs", 'bluffs', 'mb', 'monarchs', "monarch's", 'monarchbluffs'],
-    },
-    'Cutlass Keys': {
-        'search_terms': ['Cutlass Keys', 'cutlass', 'ck', 'keys', 'cutlasskeys']
-    },
-    'First Light': {
-        'search_terms': ['First Light', 'fl', 'firstlight']
-    },
-    "Weaver's Fen": {
-        'search_terms': ["Weaver's Fen", 'wf', 'weavers', 'fen', 'weaversfen']
-    },
-    'Windsward': {
-        'search_terms': ['Windsward', 'ww', 'winds']
-    },
-    'Mourningdale': {
-        'search_terms': ['Mourningdale', 'md', 'mourning', 'morningdale']
-    },
-    'Reekwater': {
-        'search_terms': ['Reekwater', 'rw', 'reek']
-    },
-    'Restless Shore': {
-        'search_terms': ['Restless Shore', 'rs', 'restless', 'shores', 'restlessshore']
-    },
-    'Brightwood': {
-        'search_terms': ['Brightwood', 'bw', 'bright']
-    },
-    'Everfall': {
-        'search_terms': ['Everfall', 'ef', 'ever']
-    },
-    'Ebonscale Reach': {
-        'search_terms': ['Ebonscale Reach', 'eb', 'ebonscale', 'ebons', 'reach', 'ebonscalereach']
-    }
+    'Brightwood': {},
+    'Cutlass Keys': {},
+    'Ebonscale Reach': {},
+    'Everfall': {},
+    'First Light': {},
+    "Monarch's Bluffs": {},
+    'Mourningdale': {},
+    'Reekwater': {},
+    'Restless Shore': {},
+    'Windsward': {},
+    "Weaver's Fen": {}
 }
 
 # Configure logging
 try:
     logger = logging.getLogger(config['LOGGER_NAME'])
     logger.setLevel(logging.DEBUG)
-    file_handler = logging.FileHandler(f"{_FILE_PREFIX}{config['LOG_FILE_NAME']}")
+    if DEV_MODE: # no need for rotating logs while developing
+        file_handler = logging.FileHandler(f"{_FILE_PREFIX}{config['LOG_FILE_NAME']}")
+    else:
+        file_handler = RotatingFileHandler(
+            f"{_FILE_PREFIX}{config['LOG_FILE_NAME']}",
+            maxBytes=2097152,
+            backupCount=3
+        ) # keeps up to 4 2MB logs
     file_handler.setLevel(logging.DEBUG)
     file_format = logging.Formatter('%(asctime)s - %(name)-16s - %(levelname)-8s - %(message)s')
     file_handler.setFormatter(file_format)
@@ -87,7 +77,8 @@ except Exception as e:
 else:
     logger.debug('Logger initialized')
 
-bot = commands.Bot(command_prefix='!')
+bot = discord.Client(intents=discord.Intents.all())
+slash = SlashCommand(bot, sync_commands=True)
 try:
     if DEV_MODE:
         logger.debug('Attempting to initialize dev Boto3 dynamodb session')
@@ -108,15 +99,6 @@ async def convert_time_str_to_min_sec(hour) -> int:
     if in_ampm == 'PM':
         in_hour += 12
     return in_hour, in_minute
-
-async def get_city_name_from_term(term) -> str:
-    '''Returns a string: city name match for [term] by matching it to the terms in the CITY_INFO dict'''
-    logger.debug(f'Attempting to get_city_name_from_term({term})')
-    for city in CITY_INFO:
-        logger.debug(f'Searching {city}')
-        if term in CITY_INFO[city]['search_terms']:
-            logger.debug(f'Found {term} in {city}')
-            return city
 
 async def get_city_invasion_string(city, day=None) -> str:
     '''Returns a string detailing invasion status for a [city] on [day] or both today/tomorrow if [day=None](default)'''
@@ -256,12 +238,45 @@ def refresh_siege_window(city:str = None) -> None:
         logger.debug(f"Determined siege time in {city_name}: {CITY_INFO[city_name]['siege_time']}")
     logger.debug('Completed running refresh_siege_window()')
 
-@bot.command(name='city', help='Responds with the siege window and invasion status for a city')
-async def invasion(ctx, city, day=None):
+city_slash_choice_list = []
+for city_choice_name in CITY_INFO:
+    city_slash_choice_list.append(
+        create_choice(
+            name=city_choice_name,
+            value=city_choice_name
+        )
+    )
+day_slash_choice_list = [
+    create_choice(
+        name='Today',
+        value='today'
+    ),
+    create_choice(
+        name='Tomorrow',
+        value='tomorrow'
+    )
+]
+@slash.slash(name='city',
+            description='Responds with the siege window and invasion status for a city',
+            options=[
+                create_option(
+                    name='city',
+                    description='The city you would like information for',
+                    option_type=3,
+                    required=True,
+                    choices=city_slash_choice_list
+                ),
+                create_option(
+                    name='day',
+                    description='The day you would like information for, default is today and tomorrow',
+                    option_type=3,
+                    required=False,
+                    choices=day_slash_choice_list
+                )
+            ])
+async def invasion(ctx, city: str, day: str = None):
     '''Responds to !city [city] [day] command with the invasion status and siege window for [city] on [day]'''
     logger.info(f'!city invoked for {city} on {day}')
-    city = await get_city_name_from_term(city)
-    logger.debug(f'Reformatted city name to {city}')
     # if times are valid values
     if day is None or day == 'today' or day == 'tomorrow':
         response = await get_city_invasion_string(city, day)
@@ -269,8 +284,19 @@ async def invasion(ctx, city, day=None):
         response = f'Invalid response for [day], expected [today, tomorrow] got [{day}]'
     await ctx.send(response)
 
-@bot.command(name='invasions', help='Responds with all invasions happening in the next two days (default) or add [today, tomorrow]')
-async def all_invasions(ctx, day=None):
+@slash.slash(name='invasions',
+            description='Responds with all invasions happening in the next two days',
+            options=[
+                create_option(
+                    name='day',
+                    description='The day you would like information for, default is today and tomorrow',
+                    option_type=3,
+                    required=False,
+                    choices=day_slash_choice_list
+                )
+            ]
+)
+async def all_invasions(ctx, day: str = None):
     '''Responds to !invasions command with all invasions happening today sorted by time'''
     logger.info('!invasions invoked')
     # refresh data if data came from a different day
@@ -281,7 +307,10 @@ async def all_invasions(ctx, day=None):
             await refresh_invasion_data()
         if CITY_INFO[city]['invasion_today']:
             logger.debug(f"Found invasion today in {city} at {CITY_INFO[city]['siege_time']}")
-            today_invasions[city] = f"{CITY_INFO[city]['siege_time']}"
+            if await is_hour_in_future(CITY_INFO[city]['siege_time']):
+                today_invasions[city] = f"{CITY_INFO[city]['siege_time']}"
+            else:
+                logger.debug(f'Discarded invasion in {city} as it has already occurred.')
         if CITY_INFO[city]['invasion_tomorrow']:
             logger.debug(f"Found invasion tomorrow in {city} at {CITY_INFO[city]['siege_time']}")
             tomorrow_invasions[city] = f"{CITY_INFO[city]['siege_time']}"
@@ -329,7 +358,9 @@ async def all_invasions(ctx, day=None):
             + '\n' + 'Please use !invasions, !invasions today or !invasions tomorrow'
     await ctx.send(response)
 
-@bot.command(name='windows', help='Responds with all siege windows in the server')
+@slash.slash(name='windows',
+            description='Responds with all siege windows in the server'
+)
 async def windows(ctx):
     '''Respods to !windows command with a list of siege windows sorted alphabetically'''
     logger.info('!windows invoked')
