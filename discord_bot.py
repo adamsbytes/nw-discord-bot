@@ -116,11 +116,13 @@ else:
 @bot.event
 async def on_ready():
     '''This function is activated when the bot reaches a 'ready' state.'''
-    logger.debug('Bot is ready')
+    logger.info('Bot is ready')
     if not DEV_MODE:
         try:
+            logger.debug('Attempting to start scheduler')
             scheduler = AsyncIOScheduler()
             for city in CITIES_WITH_ANNOUNCE_ENABLED:
+                logger.debug(f'Adding job to scheduler for announcements in {city}')
                 scheduler.add_job(
                     send_city_invasion_announcement,
                     trigger=CronTrigger(
@@ -129,6 +131,7 @@ async def on_ready():
                         second="0"),
                     args=[city]
                 )
+            logger.debug('Adding job to refresh invasion data daily at midnight')
             scheduler.add_job(
                 refresh_invasion_data,
                 trigger=CronTrigger(hour="0", minute="0", second="0")
@@ -427,7 +430,7 @@ async def windows(ctx):
 
 @tasks.loop(hours = 1)
 async def info_gather():
-    '''Executes referesh_invasion_data and refresh_siege_window every hour'''
+    '''Executes referesh_invasion_data and refresh_siege_window every hour or on command'''
     logger.info('Attempting to run scheduled task info_gather()')
     refresh_invasion_data()
     refresh_siege_window()
