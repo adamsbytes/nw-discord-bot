@@ -159,6 +159,58 @@ async def convert_time_str_to_min_sec(hour) -> int:
         in_hour += 12
     return in_hour, in_minute
 
+async def get_all_invasion_string(day: str = None) -> str:
+    '''Returns a string detailing what invasions are occuring on [day]'''
+    if day == 'today' or day is None:
+        # this sorts today's invasions returned by their time
+        today_invasion_text = []
+        if TODAYS_CITIES_WITH_INVASIONS: # if any invasions today
+            todays_cities_and_windows = {}
+            for today_city in TODAYS_CITIES_WITH_INVASIONS:
+                if await is_hour_in_future(CITY_INFO[today_city]['siege_time']):
+                    todays_cities_and_windows[today_city] = CITY_INFO[today_city]['siege_time']
+            sorted_partial = sorted(todays_cities_and_windows, key = todays_cities_and_windows.get)
+            for key in sorted_partial:
+                today_invasion_text.append(f"{key} at {CITY_INFO[key]['siege_time']}")
+        # determine today's response
+        if len(today_invasion_text) > 2:
+            today_invasion_str = ', '.join(today_invasion_text)
+            today_response = f'Today there are {str(len(today_invasion_text))} invasions: {today_invasion_str}'
+        elif len(today_invasion_text) == 2:
+            today_response = f'Today there are 2 invasions: {today_invasion_text[0]} and {today_invasion_text[1]}'
+        elif len(today_invasion_text) == 1:
+            today_response = f'Today there is one invasion: {today_invasion_text[0]}'
+        else:
+            today_response = 'There are no invasions happening today!'
+    if day == 'tomorrow' or day is None:
+        # this sorts tomorrow's invasions returned by their time
+        tomorrow_invasion_text = []
+        if TOMORROWS_CITIES_WITH_INVASIONS: # if any invasions tomorrow
+            tomorrows_cities_and_windows = {}
+            for tomorrow_city in TOMORROWS_CITIES_WITH_INVASIONS:
+                tomorrows_cities_and_windows[tomorrow_city] = CITY_INFO[tomorrow_city]['siege_time']
+            sorted_partial = sorted(tomorrows_cities_and_windows, key = tomorrows_cities_and_windows.get)
+            for key in sorted_partial:
+                tomorrow_invasion_text.append(f"{key} at {CITY_INFO[key]['siege_time']}")
+        # determine tomorrow's response
+        if len(tomorrow_invasion_text) > 2:
+            tomorrow_invasion_str = ', '.join(tomorrow_invasion_text)
+            tomorrow_response = f'Tomorrow there are {str(len(tomorrow_invasion_text))} invasions: {tomorrow_invasion_str}'
+        elif len(tomorrow_invasion_text) == 2:
+            tomorrow_response = f'Tomorrow there are 2 invasions: {tomorrow_invasion_text[0]} and {tomorrow_invasion_text[1]}'
+        elif len(tomorrow_invasion_text) == 1:
+            tomorrow_response = f'Tomorrow there is one invasion: {tomorrow_invasion_text[0]}'
+        else:
+            tomorrow_response = 'There are no invasions happening tomorrow!'
+    if day is None:
+        response = today_response + '\n' + tomorrow_response
+    elif day == 'today':
+        response = today_response
+    elif day == 'tomorrow':
+        response = tomorrow_response
+
+    return response
+
 async def get_city_invasion_string(city, day=None) -> str:
     '''Returns a string detailing invasion status for a [city] on [day] or both today/tomorrow if [day=None](default)'''
     siege_window_in_future = await is_hour_in_future(CITY_INFO[city]['siege_time'])
@@ -296,7 +348,7 @@ async def send_city_invasion_announcement(city):
     if (city in CITIES_WITH_ANNOUNCE_ENABLED) and (city in TODAYS_CITIES_WITH_INVASIONS):
         allowed_mentions = discord.AllowedMentions(everyone=True)
         announcement_message = \
-            f"@everyone There is an invasion today in {city} at {CITY_INFO[city]['siege_time']}. " + \
+            f"@everyone there is an invasion today in {city} at {CITY_INFO[city]['siege_time']}. " + \
             'Please do not forget to sign up at the War Board in town. Remember to sign up early ' + \
             'to help ensure you get a spot!'
         announcement_channel_id = bot.get_channel(CITY_INFO[city]['announcement_channel_id'])
@@ -325,14 +377,15 @@ day_slash_choice_list = [
         value='tomorrow'
     )
 ]
-@slash.slash(name='city',
-            description='Responds with the siege window and invasion status for a city',
+
+@slash.slash(name='invasions',
+            description='Responds with all invasions happening in the next two days',
             options=[
                 create_option(
                     name='city',
                     description='The city you would like information for',
                     option_type=3,
-                    required=True,
+                    required=False,
                     choices=city_slash_choice_list
                 ),
                 create_option(
@@ -343,77 +396,15 @@ day_slash_choice_list = [
                     choices=day_slash_choice_list
                 )
             ])
-async def invasion(ctx, city: str, day: str = None):
-    '''Responds to /city [city] [day] command with the invasion status and siege window for [city] on [day]'''
-    logger.info(f'/city [city: {city}] [day: {day}] invoked')
-    # if times are valid values
-    if day is None or day == 'today' or day == 'tomorrow':
-        response = await get_city_invasion_string(city, day)
-    else:
-        response = f'Invalid response for [day], expected [today, tomorrow] got [{day}]'
-    await ctx.send(response)
+async def invasions(ctx, city: str = None, day: str = None):
+    '''Responds to /invasions command with all invasions happening for the city, or for today sorted by time'''
+    logger.info(f'/invasions [city: {city}] [day: {day}] invoked')
 
-@slash.slash(name='invasions',
-            description='Responds with all invasions happening in the next two days',
-            options=[
-                create_option(
-                    name='day',
-                    description='The day you would like information for, default is today and tomorrow',
-                    option_type=3,
-                    required=False,
-                    choices=day_slash_choice_list
-                )
-            ])
-async def all_invasions(ctx, day: str = None):
-    '''Responds to /invasions command with all invasions happening today sorted by time'''
-    logger.info(f'/invasions [day: {day}] invoked')
-    if day == 'today' or day is None:
-        # this sorts today's invasions returned by their time
-        today_invasion_text = []
-        if TODAYS_CITIES_WITH_INVASIONS: # if any invasions today
-            todays_cities_and_windows = {}
-            for today_city in TODAYS_CITIES_WITH_INVASIONS:
-                if await is_hour_in_future(CITY_INFO[today_city]['siege_time']):
-                    todays_cities_and_windows[today_city] = CITY_INFO[today_city]['siege_time']
-            sorted_partial = sorted(todays_cities_and_windows, key = todays_cities_and_windows.get)
-            for key in sorted_partial:
-                today_invasion_text.append(f"{key} at {CITY_INFO[key]['siege_time']}")
-        # determine today's response
-        if len(today_invasion_text) > 2:
-            today_invasion_str = ', '.join(today_invasion_text)
-            today_response = f'Today there are {str(len(today_invasion_text))} invasions: {today_invasion_str}'
-        elif len(today_invasion_text) == 2:
-            today_response = f'Today there are 2 invasions: {today_invasion_text[0]} and {today_invasion_text[1]}'
-        elif len(today_invasion_text) == 1:
-            today_response = f'Today there is one invasion: {today_invasion_text[0]}'
-        else:
-            today_response = 'There are no invasions happening today!'
-    if day == 'tomorrow' or day is None:
-        # this sorts tomorrow's invasions returned by their time
-        tomorrow_invasion_text = []
-        if TOMORROWS_CITIES_WITH_INVASIONS: # if any invasions tomorrow
-            tomorrows_cities_and_windows = {}
-            for tomorrow_city in TOMORROWS_CITIES_WITH_INVASIONS:
-                tomorrows_cities_and_windows[tomorrow_city] = CITY_INFO[tomorrow_city]['siege_time']
-            sorted_partial = sorted(tomorrows_cities_and_windows, key = tomorrows_cities_and_windows.get)
-            for key in sorted_partial:
-                tomorrow_invasion_text.append(f"{key} at {CITY_INFO[key]['siege_time']}")
-        # determine tomorrow's response
-        if len(tomorrow_invasion_text) > 2:
-            tomorrow_invasion_str = ', '.join(tomorrow_invasion_text)
-            tomorrow_response = f'Tomorrow there are {str(len(tomorrow_invasion_text))} invasions: {tomorrow_invasion_str}'
-        elif len(tomorrow_invasion_text) == 2:
-            tomorrow_response = f'Tomorrow there are 2 invasions: {tomorrow_invasion_text[0]} and {tomorrow_invasion_text[1]}'
-        elif len(tomorrow_invasion_text) == 1:
-            tomorrow_response = f'Tomorrow there is one invasion: {tomorrow_invasion_text[0]}'
-        else:
-            tomorrow_response = 'There are no invasions happening tomorrow!'
-    if day is None:
-        response = today_response + '\n' + tomorrow_response
-    elif day == 'today':
-        response = today_response
-    elif day == 'tomorrow':
-        response = tomorrow_response
+    if city is None:
+        response = await get_all_invasion_string(day)
+    else:
+        response = await get_city_invasion_string(city, day)
+
     await ctx.send(response)
 
 @slash.slash(name='windows',
