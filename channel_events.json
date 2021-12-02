@@ -1,0 +1,13 @@
+{
+    "899439114225582140": {
+        "event_type": "announcement",
+        "announcement_city": "Monarch's Bluffs",
+        "event_hour": 8,
+        "event_minute": 0
+    },
+    "899433418260119615": {
+        "event_type": "daily_update",
+        "event_hour": 6,
+        "event_minute": 0
+    }
+}
