@@ -143,7 +143,7 @@ async def on_ready():
             logger.debug('Initialized scheduler and added channel-announce function')
     info_gather.start()
 
-async def clear_invasion_data_list() -> None:
+async def clear_invasion_data_lists() -> None:
     '''This clears TODAYS/TOMORROWS_CITIES_WITH_INVASIONS lists'''
     # Need a better way to do this, doing it within the refresh function
     # causes a scoping issue with the variable
@@ -226,17 +226,12 @@ async def is_hour_in_future(hour) -> bool:
     logger.debug(f'Completed is_hour_in_future() with hour {hour_int}:{minute_int} and got result: {result}')
     return result
 
-async def refresh_invasion_data(city:str = None) -> None:
-    '''Gets invasion status from dynamodb for [city] or all cities if [city=None] (default)'''
-    logger.debug(f'Attempting to refresh_invasion_data({city})')
-    if city:
-        cities_to_refresh = [city]
-    else:
-        cities_to_refresh = list(CITY_INFO.keys())
+async def refresh_invasion_data() -> None:
+    '''Clears locally cached invasion lists and gets invasion status from dynamodb for all cities'''
+    logger.debug('Attempting to refresh_invasion_data()')
+    await clear_invasion_data_lists()
 
-    await clear_invasion_data_list()
-
-    for c_name in cities_to_refresh:
+    for c_name in list(CITY_INFO.keys()):
         logger.debug(f'Refreshing data in {c_name}')
         city_name = ''.join(e for e in c_name if e.isalnum()).lower()
         city_db_table = f"{config['EVENT_TABLE_PREFIX']}{city_name}"
