@@ -385,6 +385,7 @@ async def send_city_invasion_announcement(int_channel_id: int, city: str):
 
 async def send_daily_invasion_update(int_channel_id: int):
     '''Sends a daily message announcement to [channel] with the day's invasions. See channel_events.json'''
+    logger.debug(f'Attempting to send_daily_invasion_update() to channel: {str(int_channel_id)}')
     daily_update_message = await get_all_invasion_string(day='today')
     await int_channel_id.send(daily_update_message)
 
