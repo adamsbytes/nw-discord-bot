@@ -31,11 +31,11 @@ from dotenv import dotenv_values
 if 'LOGNAME' not in os.environ: # logname is env var on ec2, not on local dev
     DEV_MODE = True
     _FILE_PREFIX = ''
-    SCHEDULER_CONFIG_FILEPATH = None
+    EVENTS_CONFIG_FILEPATH = None
 else:
     DEV_MODE = False
     _FILE_PREFIX = '/opt/invasion-bot/'
-    SCHEDULER_CONFIG_FILEPATH = f'{_FILE_PREFIX}announcement_schedules.json'
+    EVENTS_CONFIG_FILEPATH = f'{_FILE_PREFIX}channel_events.json'
 
 CITY_INFO = {
     'Brightwood': {},
@@ -51,9 +51,10 @@ CITY_INFO = {
     "Weaver's Fen": {}
 }
 
-CITIES_WITH_ANNOUNCE_ENABLED = []
+CHANNELS_WITH_ANNOUNCE_ENABLED = {}
+CHANNELS_WITH_DAILY_UPDATE_ENABLED = {}
 TODAYS_CITIES_WITH_INVASIONS = []
-TOMORROWS_CITIES_WITH_INVASIONS= []
+TOMORROWS_CITIES_WITH_INVASIONS = []
 
 # Load configuration
 try:
@@ -62,19 +63,23 @@ try:
         **dotenv_values(f'{_FILE_PREFIX}.env.secret'),
         **os.environ # override .env vars with os environment vars
     }
-    if SCHEDULER_CONFIG_FILEPATH is not None:
-        with open(SCHEDULER_CONFIG_FILEPATH, encoding='utf-8') as f:
-            scheduling_config = json.load(f)
-        for sched_city in scheduling_config:
-            CITIES_WITH_ANNOUNCE_ENABLED.append(sched_city)
-            CITY_INFO[sched_city]['announcement_channel_id'] = int(scheduling_config[sched_city]['announcement_channel_id'])
-            CITY_INFO[sched_city]['announcement_hour'] = int(scheduling_config[sched_city]['announcement_hour'])
-            CITY_INFO[sched_city]['announcement_minute'] = int(scheduling_config[sched_city]['announcement_minute'])
-            assert len(str(CITY_INFO[sched_city]['announcement_channel_id'])) == 18
-            assert CITY_INFO[sched_city]['announcement_hour'] <= 24
-            assert CITY_INFO[sched_city]['announcement_hour'] > 0
-            assert CITY_INFO[sched_city]['announcement_minute'] < 60
-            assert CITY_INFO[sched_city]['announcement_minute'] >= 0
+    if EVENTS_CONFIG_FILEPATH is not None:
+        with open(EVENTS_CONFIG_FILEPATH, encoding='utf-8') as f:
+            events_config = json.load(f)
+        for channel_id in events_config:
+            channel_id = int(channel_id)
+            assert len(str(channel_id)) == 18
+            assert events_config[channel_id]['event_hour'] <= 24
+            assert events_config[channel_id]['event_hour'] > 0
+            assert events_config[channel_id]['event_minute'] < 60
+            assert events_config[channel_id]['event_minute'] >= 0
+            if events_config[channel_id]['event_type'] == 'announcement':
+                CHANNELS_WITH_ANNOUNCE_ENABLED[channel_id]['city'] = events_config[channel_id]['announcement_city']
+                CHANNELS_WITH_ANNOUNCE_ENABLED[channel_id]['hour'] = int(events_config[channel_id]['event_hour'])
+                CHANNELS_WITH_ANNOUNCE_ENABLED[channel_id]['minute'] = int(events_config[channel_id]['event_minute'])
+            if events_config[channel_id]['event_type'] == 'daily_update':
+                CHANNELS_WITH_DAILY_UPDATE_ENABLED[channel_id]['hour'] = int(events_config[channel_id]['event_hour'])
+                CHANNELS_WITH_DAILY_UPDATE_ENABLED[channel_id]['minute'] = int(events_config[channel_id]['event_minute'])
 except Exception as e:
     sys.exit(f'Failed to load configuration: {e}')
 
@@ -118,30 +123,59 @@ async def on_ready():
     '''This function is activated when the bot reaches a 'ready' state.'''
     logger.info('Bot is ready')
     if not DEV_MODE:
-        try:
+        try: # scheduler startup
             logger.debug('Attempting to start scheduler')
             scheduler = AsyncIOScheduler()
-            for city in CITIES_WITH_ANNOUNCE_ENABLED:
-                logger.debug(f'Adding job to scheduler for announcements in {city}')
+            for channel in CHANNELS_WITH_ANNOUNCE_ENABLED:
+                logger.debug(f'Adding job to scheduler for announcements in {str(channel)}')
+                job_hour = CHANNELS_WITH_ANNOUNCE_ENABLED[channel]['hour']
+                job_minute = CHANNELS_WITH_ANNOUNCE_ENABLED[channel]['minute']
+                job_city = CHANNELS_WITH_ANNOUNCE_ENABLED[channel]['city']
                 scheduler.add_job(
                     send_city_invasion_announcement,
                     trigger=CronTrigger(
-                        hour=str(CITY_INFO[city]['announcement_hour']),
-                        minute=str(CITY_INFO[city]['announcement_minute']),
-                        second="0"),
-                    args=[city]
+                        hour=str(job_hour),
+                        minute=str(job_minute),
+                        second="0"
+                        ),
+                    args=[channel, job_city]
+                )
+            for channel in CHANNELS_WITH_DAILY_UPDATE_ENABLED:
+                logger.debug(f'Adding job to scheduler for daily updates in {str(channel)}')
+                job_hour = CHANNELS_WITH_DAILY_UPDATE_ENABLED[channel]['hour']
+                job_minute = CHANNELS_WITH_DAILY_UPDATE_ENABLED[channel]['minute']
+                scheduler.add_job(
+                    send_daily_invasion_update,
+                    trigger=CronTrigger(
+                        hour=str(job_hour),
+                        minute=str(job_minute),
+                        second="0"
+                        ),
+                    args=[channel]
                 )
             logger.debug('Adding job to refresh invasion data daily at midnight')
             scheduler.add_job(
                 refresh_invasion_data,
                 trigger=CronTrigger(hour="0", minute="0", second="0")
             ) # daily task at midnight
+            logger.debug('Adding job to refresh invasion data daily 15 minutes after midnight')
+            scheduler.add_job(
+                refresh_invasion_data,
+                trigger=CronTrigger(hour="0", minute="15", second="0")
+            ) # daily task at 00:15
             scheduler.start()
         except Exception as sched_exception:
             logger.exception(f'Failed to start scheduler: {sched_exception}')
         else:
             logger.debug('Initialized scheduler and added channel-announce function')
     info_gather.start()
+
+async def clear_invasion_data_lists() -> None:
+    '''This clears TODAYS/TOMORROWS_CITIES_WITH_INVASIONS lists'''
+    # Need a better way to do this, doing it within the refresh function
+    # causes a scoping issue with the variable
+    TODAYS_CITIES_WITH_INVASIONS.clear()
+    TOMORROWS_CITIES_WITH_INVASIONS.clear()
 
 async def convert_time_str_to_min_sec(hour) -> int:
     '''Intakes a string with style 08:30 PM and returns 24-hour format time int: 20'''
@@ -151,6 +185,58 @@ async def convert_time_str_to_min_sec(hour) -> int:
     if in_ampm == 'PM':
         in_hour += 12
     return in_hour, in_minute
+
+async def get_all_invasion_string(day: str = None) -> str:
+    '''Returns a string detailing what invasions are occuring on [day]'''
+    if day == 'today' or day is None:
+        # this sorts today's invasions returned by their time
+        today_invasion_text = []
+        if TODAYS_CITIES_WITH_INVASIONS: # if any invasions today
+            todays_cities_and_windows = {}
+            for today_city in TODAYS_CITIES_WITH_INVASIONS:
+                if await is_hour_in_future(CITY_INFO[today_city]['siege_time']):
+                    todays_cities_and_windows[today_city] = CITY_INFO[today_city]['siege_time']
+            sorted_partial = sorted(todays_cities_and_windows, key = todays_cities_and_windows.get)
+            for key in sorted_partial:
+                today_invasion_text.append(f"{key} at {CITY_INFO[key]['siege_time']}")
+        # determine today's response
+        if len(today_invasion_text) > 2:
+            today_invasion_str = ', '.join(today_invasion_text)
+            today_response = f'Today there are {str(len(today_invasion_text))} invasions: {today_invasion_str}'
+        elif len(today_invasion_text) == 2:
+            today_response = f'Today there are 2 invasions: {today_invasion_text[0]} and {today_invasion_text[1]}'
+        elif len(today_invasion_text) == 1:
+            today_response = f'Today there is one invasion: {today_invasion_text[0]}'
+        else:
+            today_response = 'There are no invasions happening today!'
+    if day == 'tomorrow' or day is None:
+        # this sorts tomorrow's invasions returned by their time
+        tomorrow_invasion_text = []
+        if TOMORROWS_CITIES_WITH_INVASIONS: # if any invasions tomorrow
+            tomorrows_cities_and_windows = {}
+            for tomorrow_city in TOMORROWS_CITIES_WITH_INVASIONS:
+                tomorrows_cities_and_windows[tomorrow_city] = CITY_INFO[tomorrow_city]['siege_time']
+            sorted_partial = sorted(tomorrows_cities_and_windows, key = tomorrows_cities_and_windows.get)
+            for key in sorted_partial:
+                tomorrow_invasion_text.append(f"{key} at {CITY_INFO[key]['siege_time']}")
+        # determine tomorrow's response
+        if len(tomorrow_invasion_text) > 2:
+            tomorrow_invasion_str = ', '.join(tomorrow_invasion_text)
+            tomorrow_response = f'Tomorrow there are {str(len(tomorrow_invasion_text))} invasions: {tomorrow_invasion_str}'
+        elif len(tomorrow_invasion_text) == 2:
+            tomorrow_response = f'Tomorrow there are 2 invasions: {tomorrow_invasion_text[0]} and {tomorrow_invasion_text[1]}'
+        elif len(tomorrow_invasion_text) == 1:
+            tomorrow_response = f'Tomorrow there is one invasion: {tomorrow_invasion_text[0]}'
+        else:
+            tomorrow_response = 'There are no invasions happening tomorrow!'
+    if day is None:
+        response = today_response + '\n' + tomorrow_response
+    elif day == 'today':
+        response = today_response
+    elif day == 'tomorrow':
+        response = tomorrow_response
+
+    return response
 
 async def get_city_invasion_string(city, day=None) -> str:
     '''Returns a string detailing invasion status for a [city] on [day] or both today/tomorrow if [day=None](default)'''
@@ -219,15 +305,12 @@ async def is_hour_in_future(hour) -> bool:
     logger.debug(f'Completed is_hour_in_future() with hour {hour_int}:{minute_int} and got result: {result}')
     return result
 
-async def refresh_invasion_data(city:str = None) -> None:
-    '''Gets invasion status from dynamodb for [city] or all cities if [city=None] (default)'''
-    logger.debug(f'Attempting to refresh_invasion_data({city})')
-    if city:
-        cities_to_refresh = [city]
-    else:
-        cities_to_refresh = list(CITY_INFO.keys())
+async def refresh_invasion_data() -> None:
+    '''Clears locally cached invasion lists and gets invasion status from dynamodb for all cities'''
+    logger.debug('Attempting to refresh_invasion_data()')
+    await clear_invasion_data_lists()
 
-    for c_name in cities_to_refresh:
+    for c_name in list(CITY_INFO.keys()):
         logger.debug(f'Refreshing data in {c_name}')
         city_name = ''.join(e for e in c_name if e.isalnum()).lower()
         city_db_table = f"{config['EVENT_TABLE_PREFIX']}{city_name}"
@@ -242,8 +325,8 @@ async def refresh_invasion_data(city:str = None) -> None:
         )
         logger.debug(f'Response from db: {response}')
         if 'Item' in response:
-            TODAYS_CITIES_WITH_INVASIONS.append(c_name)
             logger.debug(f"Determined invasion happening today in {c_name}")
+            TODAYS_CITIES_WITH_INVASIONS.append(c_name)
         else:
             logger.debug(f"Determined no invasion is happening today in {c_name}")
         # Get tomorrow's invasions
@@ -257,10 +340,11 @@ async def refresh_invasion_data(city:str = None) -> None:
         )
         logger.debug(f'Response from db: {response}')
         if 'Item' in response:
-            TOMORROWS_CITIES_WITH_INVASIONS.append(c_name)
             logger.debug(f"Determined invasion happening tomorrow in {c_name}")
+            TOMORROWS_CITIES_WITH_INVASIONS.append(c_name)
         else:
             logger.debug(f"Determined no invasion is happening tomorrow in {c_name}")
+
     logger.debug('Completed running refresh_invasion_data()')
 
 async def refresh_siege_window(city:str = None) -> None:
@@ -285,22 +369,25 @@ async def refresh_siege_window(city:str = None) -> None:
         logger.debug(f"Determined siege time in {city_name}: {CITY_INFO[city_name]['siege_time']}")
     logger.debug('Completed running refresh_siege_window()')
 
-async def send_city_invasion_announcement(city):
-    '''Sends a city invasion announcement to [city] if the city has that enabled. See announcement_schedules.json'''
-    logger.debug(f'Attempting to send_city_invasion_announcement() for city: {city}')
-    if (city in CITIES_WITH_ANNOUNCE_ENABLED) and (city in TODAYS_CITIES_WITH_INVASIONS):
+async def send_city_invasion_announcement(int_channel_id: int, city: str):
+    '''Sends a city invasion announcement to [channel] for [city]. See channel_events.json'''
+    logger.debug(f'Attempting to send_city_invasion_announcement() to channel: {str(int_channel_id)} for city: {city}')
+    if city in TODAYS_CITIES_WITH_INVASIONS:
         allowed_mentions = discord.AllowedMentions(everyone=True)
         announcement_message = \
-            f"@everyone There is an invasion today in {city} at {CITY_INFO[city]['siege_time']}. " + \
+            f"@everyone there is an invasion today in {city} at {CITY_INFO[city]['siege_time']}. " + \
             'Please do not forget to sign up at the War Board in town. Remember to sign up early ' + \
             'to help ensure you get a spot!'
-        announcement_channel_id = bot.get_channel(CITY_INFO[city]['announcement_channel_id'])
-        logger.debug(f"Sending announcement message for {city} to {str(CITY_INFO[city]['announcement_channel_id'])}")
-        await announcement_channel_id.send(announcement_message, allowed_mentions=allowed_mentions)
-    elif city not in CITIES_WITH_ANNOUNCE_ENABLED:
-        logger.debug(f'Could not find {city} in enabled city list: {CITIES_WITH_ANNOUNCE_ENABLED}')
+        logger.debug(f"Sending announcement message for {city} to {str(int_channel_id)}")
+        await int_channel_id.send(announcement_message, allowed_mentions=allowed_mentions)
     else:
         logger.debug(f'Determined {city} does not have an invasion today, no announcement needed.')
+
+async def send_daily_invasion_update(int_channel_id: int):
+    '''Sends a daily message announcement to [channel] with the day's invasions. See channel_events.json'''
+    logger.debug(f'Attempting to send_daily_invasion_update() to channel: {str(int_channel_id)}')
+    daily_update_message = await get_all_invasion_string(day='today')
+    await int_channel_id.send(daily_update_message)
 
 city_slash_choice_list = []
 for city_choice_name in CITY_INFO:
@@ -320,14 +407,15 @@ day_slash_choice_list = [
         value='tomorrow'
     )
 ]
-@slash.slash(name='city',
-            description='Responds with the siege window and invasion status for a city',
+
+@slash.slash(name='invasions',
+            description='Responds with all invasions happening in the next two days',
             options=[
                 create_option(
                     name='city',
                     description='The city you would like information for',
                     option_type=3,
-                    required=True,
+                    required=False,
                     choices=city_slash_choice_list
                 ),
                 create_option(
@@ -338,82 +426,20 @@ day_slash_choice_list = [
                     choices=day_slash_choice_list
                 )
             ])
-async def invasion(ctx, city: str, day: str = None):
-    '''Responds to /city [city] [day] command with the invasion status and siege window for [city] on [day]'''
-    logger.info(f'/city [city: {city}] [day: {day}] invoked')
-    # if times are valid values
-    if day is None or day == 'today' or day == 'tomorrow':
-        response = await get_city_invasion_string(city, day)
-    else:
-        response = f'Invalid response for [day], expected [today, tomorrow] got [{day}]'
-    await ctx.send(response)
+async def invasions(ctx, city: str = None, day: str = None):
+    '''Responds to /invasions command with all invasions happening for the city, or for today sorted by time'''
+    logger.info(f'/invasions [city: {city}] [day: {day}] invoked')
 
-@slash.slash(name='invasions',
-            description='Responds with all invasions happening in the next two days',
-            options=[
-                create_option(
-                    name='day',
-                    description='The day you would like information for, default is today and tomorrow',
-                    option_type=3,
-                    required=False,
-                    choices=day_slash_choice_list
-                )
-            ])
-async def all_invasions(ctx, day: str = None):
-    '''Responds to /invasions command with all invasions happening today sorted by time'''
-    logger.info(f'/invasions [day: {day}] invoked')
-    if day == 'today' or day is None:
-        # this sorts today's invasions returned by their time
-        today_invasion_text = []
-        if TODAYS_CITIES_WITH_INVASIONS: # if any invasions today
-            todays_cities_and_windows = {}
-            for today_city in TODAYS_CITIES_WITH_INVASIONS:
-                if await is_hour_in_future(CITY_INFO[today_city]['siege_time']):
-                    todays_cities_and_windows[today_city] = CITY_INFO[today_city]['siege_time']
-            sorted_partial = sorted(todays_cities_and_windows, key = todays_cities_and_windows.get)
-            for key in sorted_partial:
-                today_invasion_text.append(f"{key} at {CITY_INFO[key]['siege_time']}")
-        # determine today's response
-        if len(today_invasion_text) > 2:
-            today_invasion_str = ', '.join(today_invasion_text)
-            today_response = f'Today there are {str(len(today_invasion_text))} invasions: {today_invasion_str}'
-        elif len(today_invasion_text) == 2:
-            today_response = f'Today there are 2 invasions: {today_invasion_text[0]} and {today_invasion_text[1]}'
-        elif len(today_invasion_text) == 1:
-            today_response = f'Today there is one invasion: {today_invasion_text[0]}'
-        else:
-            today_response = 'There are no invasions happening today!'
-    if day == 'tomorrow' or day is None:
-        # this sorts tomorrow's invasions returned by their time
-        tomorrow_invasion_text = []
-        if TOMORROWS_CITIES_WITH_INVASIONS: # if any invasions tomorrow
-            tomorrows_cities_and_windows = {}
-            for tomorrow_city in TOMORROWS_CITIES_WITH_INVASIONS:
-                tomorrows_cities_and_windows[tomorrow_city] = CITY_INFO[tomorrow_city]['siege_time']
-            sorted_partial = sorted(tomorrows_cities_and_windows, key = tomorrows_cities_and_windows.get)
-            for key in sorted_partial:
-                tomorrow_invasion_text.append(f"{key} at {CITY_INFO[key]['siege_time']}")
-        # determine tomorrow's response
-        if len(tomorrow_invasion_text) > 2:
-            tomorrow_invasion_str = ', '.join(tomorrow_invasion_text)
-            tomorrow_response = f'Tomorrow there are {str(len(tomorrow_invasion_text))} invasions: {tomorrow_invasion_str}'
-        elif len(tomorrow_invasion_text) == 2:
-            tomorrow_response = f'Tomorrow there are 2 invasions: {tomorrow_invasion_text[0]} and {tomorrow_invasion_text[1]}'
-        elif len(tomorrow_invasion_text) == 1:
-            tomorrow_response = f'Tomorrow there is one invasion: {tomorrow_invasion_text[0]}'
-        else:
-            tomorrow_response = 'There are no invasions happening tomorrow!'
-    if day is None:
-        response = today_response + '\n' + tomorrow_response
-    elif day == 'today':
-        response = today_response
-    elif day == 'tomorrow':
-        response = tomorrow_response
+    if city is None:
+        response = await get_all_invasion_string(day)
+    else:
+        response = await get_city_invasion_string(city, day)
+
     await ctx.send(response)
 
 @slash.slash(name='windows',
             description='Responds with all siege windows in the server'
-)
+    )
 async def windows(ctx):
     '''Respods to /windows command with a list of siege windows sorted alphabetically'''
     logger.info('/windows invoked')
