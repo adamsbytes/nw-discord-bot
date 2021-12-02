@@ -53,7 +53,7 @@ CITY_INFO = {
 
 CITIES_WITH_ANNOUNCE_ENABLED = []
 TODAYS_CITIES_WITH_INVASIONS = []
-TOMORROWS_CITIES_WITH_INVASIONS= []
+TOMORROWS_CITIES_WITH_INVASIONS = []
 
 # Load configuration
 try:
@@ -143,6 +143,13 @@ async def on_ready():
             logger.debug('Initialized scheduler and added channel-announce function')
     info_gather.start()
 
+async def clear_invasion_data_list() -> None:
+    '''This clears TODAYS/TOMORROWS_CITIES_WITH_INVASIONS lists'''
+    # Need a better way to do this, doing it within the refresh function
+    # causes a scoping issue with the variable
+    TODAYS_CITIES_WITH_INVASIONS.clear()
+    TOMORROWS_CITIES_WITH_INVASIONS.clear()
+
 async def convert_time_str_to_min_sec(hour) -> int:
     '''Intakes a string with style 08:30 PM and returns 24-hour format time int: 20'''
     in_hour = int(hour.split(':')[0]) # split 08:30 PM style string to 08
@@ -227,6 +234,8 @@ async def refresh_invasion_data(city:str = None) -> None:
     else:
         cities_to_refresh = list(CITY_INFO.keys())
 
+    await clear_invasion_data_list()
+
     for c_name in cities_to_refresh:
         logger.debug(f'Refreshing data in {c_name}')
         city_name = ''.join(e for e in c_name if e.isalnum()).lower()
@@ -242,8 +251,8 @@ async def refresh_invasion_data(city:str = None) -> None:
         )
         logger.debug(f'Response from db: {response}')
         if 'Item' in response:
-            TODAYS_CITIES_WITH_INVASIONS.append(c_name)
             logger.debug(f"Determined invasion happening today in {c_name}")
+            TODAYS_CITIES_WITH_INVASIONS.append(c_name)
         else:
             logger.debug(f"Determined no invasion is happening today in {c_name}")
         # Get tomorrow's invasions
@@ -257,10 +266,11 @@ async def refresh_invasion_data(city:str = None) -> None:
         )
         logger.debug(f'Response from db: {response}')
         if 'Item' in response:
-            TOMORROWS_CITIES_WITH_INVASIONS.append(c_name)
             logger.debug(f"Determined invasion happening tomorrow in {c_name}")
+            TOMORROWS_CITIES_WITH_INVASIONS.append(c_name)
         else:
             logger.debug(f"Determined no invasion is happening tomorrow in {c_name}")
+
     logger.debug('Completed running refresh_invasion_data()')
 
 async def refresh_siege_window(city:str = None) -> None:
