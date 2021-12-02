@@ -1,0 +1,13 @@
+{
+    871635135065172849: {
+        "event_type": "announcement",
+        "announcement_city": "city_name",
+        "event_hour": 18,
+        "event_minute": 30
+    },
+    765072814934127613: {
+        "event_type": "daily_update",
+        "event_hour": 18,
+        "event_minute": 30
+    }
+}
