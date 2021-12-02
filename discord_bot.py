@@ -31,11 +31,11 @@ from dotenv import dotenv_values
 if 'LOGNAME' not in os.environ: # logname is env var on ec2, not on local dev
     DEV_MODE = True
     _FILE_PREFIX = ''
-    SCHEDULER_CONFIG_FILEPATH = None
+    EVENTS_CONFIG_FILEPATH = None
 else:
     DEV_MODE = False
     _FILE_PREFIX = '/opt/invasion-bot/'
-    SCHEDULER_CONFIG_FILEPATH = f'{_FILE_PREFIX}announcement_schedules.json'
+    EVENTS_CONFIG_FILEPATH = f'{_FILE_PREFIX}channel_events.json'
 
 CITY_INFO = {
     'Brightwood': {},
@@ -51,7 +51,8 @@ CITY_INFO = {
     "Weaver's Fen": {}
 }
 
-CITIES_WITH_ANNOUNCE_ENABLED = []
+CHANNELS_WITH_ANNOUNCE_ENABLED = {}
+CHANNELS_WITH_DAILY_UPDATE_ENABLED = {}
 TODAYS_CITIES_WITH_INVASIONS = []
 TOMORROWS_CITIES_WITH_INVASIONS = []
 
@@ -62,19 +63,23 @@ try:
         **dotenv_values(f'{_FILE_PREFIX}.env.secret'),
         **os.environ # override .env vars with os environment vars
     }
-    if SCHEDULER_CONFIG_FILEPATH is not None:
-        with open(SCHEDULER_CONFIG_FILEPATH, encoding='utf-8') as f:
-            scheduling_config = json.load(f)
-        for sched_city in scheduling_config:
-            CITIES_WITH_ANNOUNCE_ENABLED.append(sched_city)
-            CITY_INFO[sched_city]['announcement_channel_id'] = int(scheduling_config[sched_city]['announcement_channel_id'])
-            CITY_INFO[sched_city]['announcement_hour'] = int(scheduling_config[sched_city]['announcement_hour'])
-            CITY_INFO[sched_city]['announcement_minute'] = int(scheduling_config[sched_city]['announcement_minute'])
-            assert len(str(CITY_INFO[sched_city]['announcement_channel_id'])) == 18
-            assert CITY_INFO[sched_city]['announcement_hour'] <= 24
-            assert CITY_INFO[sched_city]['announcement_hour'] > 0
-            assert CITY_INFO[sched_city]['announcement_minute'] < 60
-            assert CITY_INFO[sched_city]['announcement_minute'] >= 0
+    if EVENTS_CONFIG_FILEPATH is not None:
+        with open(EVENTS_CONFIG_FILEPATH, encoding='utf-8') as f:
+            events_config = json.load(f)
+        for channel_id in events_config:
+            channel_id = int(channel_id)
+            assert len(str(channel_id)) == 18
+            assert events_config[channel_id]['event_hour'] <= 24
+            assert events_config[channel_id]['event_hour'] > 0
+            assert events_config[channel_id]['event_minute'] < 60
+            assert events_config[channel_id]['event_minute'] >= 0
+            if events_config[channel_id]['event_type'] == 'announcement':
+                CHANNELS_WITH_ANNOUNCE_ENABLED[channel_id]['city'] = events_config[channel_id]['announcement_city']
+                CHANNELS_WITH_ANNOUNCE_ENABLED[channel_id]['hour'] = int(events_config[channel_id]['event_hour'])
+                CHANNELS_WITH_ANNOUNCE_ENABLED[channel_id]['minute'] = int(events_config[channel_id]['event_minute'])
+            if events_config[channel_id]['event_type'] == 'daily_update':
+                CHANNELS_WITH_DAILY_UPDATE_ENABLED[channel_id]['hour'] = int(events_config[channel_id]['event_hour'])
+                CHANNELS_WITH_DAILY_UPDATE_ENABLED[channel_id]['minute'] = int(events_config[channel_id]['event_minute'])
 except Exception as e:
     sys.exit(f'Failed to load configuration: {e}')
 
@@ -118,24 +123,46 @@ async def on_ready():
     '''This function is activated when the bot reaches a 'ready' state.'''
     logger.info('Bot is ready')
     if not DEV_MODE:
-        try:
+        try: # scheduler startup
             logger.debug('Attempting to start scheduler')
             scheduler = AsyncIOScheduler()
-            for city in CITIES_WITH_ANNOUNCE_ENABLED:
-                logger.debug(f'Adding job to scheduler for announcements in {city}')
+            for channel in CHANNELS_WITH_ANNOUNCE_ENABLED:
+                logger.debug(f'Adding job to scheduler for announcements in {str(channel)}')
+                job_hour = CHANNELS_WITH_ANNOUNCE_ENABLED[channel]['hour']
+                job_minute = CHANNELS_WITH_ANNOUNCE_ENABLED[channel]['minute']
+                job_city = CHANNELS_WITH_ANNOUNCE_ENABLED[channel]['city']
                 scheduler.add_job(
                     send_city_invasion_announcement,
                     trigger=CronTrigger(
-                        hour=str(CITY_INFO[city]['announcement_hour']),
-                        minute=str(CITY_INFO[city]['announcement_minute']),
-                        second="0"),
-                    args=[city]
+                        hour=str(job_hour),
+                        minute=str(job_minute),
+                        second="0"
+                        ),
+                    args=[channel, job_city]
+                )
+            for channel in CHANNELS_WITH_DAILY_UPDATE_ENABLED:
+                logger.debug(f'Adding job to scheduler for daily updates in {str(channel)}')
+                job_hour = CHANNELS_WITH_DAILY_UPDATE_ENABLED[channel]['hour']
+                job_minute = CHANNELS_WITH_DAILY_UPDATE_ENABLED[channel]['minute']
+                scheduler.add_job(
+                    send_daily_invasion_update,
+                    trigger=CronTrigger(
+                        hour=str(job_hour),
+                        minute=str(job_minute),
+                        second="0"
+                        ),
+                    args=[channel]
                 )
             logger.debug('Adding job to refresh invasion data daily at midnight')
             scheduler.add_job(
                 refresh_invasion_data,
                 trigger=CronTrigger(hour="0", minute="0", second="0")
             ) # daily task at midnight
+            logger.debug('Adding job to refresh invasion data daily 15 minutes after midnight')
+            scheduler.add_job(
+                refresh_invasion_data,
+                trigger=CronTrigger(hour="0", minute="15", second="0")
+            ) # daily task at 00:15
             scheduler.start()
         except Exception as sched_exception:
             logger.exception(f'Failed to start scheduler: {sched_exception}')
@@ -342,22 +369,24 @@ async def refresh_siege_window(city:str = None) -> None:
         logger.debug(f"Determined siege time in {city_name}: {CITY_INFO[city_name]['siege_time']}")
     logger.debug('Completed running refresh_siege_window()')
 
-async def send_city_invasion_announcement(city):
-    '''Sends a city invasion announcement to [city] if the city has that enabled. See announcement_schedules.json'''
-    logger.debug(f'Attempting to send_city_invasion_announcement() for city: {city}')
-    if (city in CITIES_WITH_ANNOUNCE_ENABLED) and (city in TODAYS_CITIES_WITH_INVASIONS):
+async def send_city_invasion_announcement(int_channel_id: int, city: str):
+    '''Sends a city invasion announcement to [channel] for [city]. See channel_events.json'''
+    logger.debug(f'Attempting to send_city_invasion_announcement() to channel: {str(int_channel_id)} for city: {city}')
+    if city in TODAYS_CITIES_WITH_INVASIONS:
         allowed_mentions = discord.AllowedMentions(everyone=True)
         announcement_message = \
             f"@everyone there is an invasion today in {city} at {CITY_INFO[city]['siege_time']}. " + \
             'Please do not forget to sign up at the War Board in town. Remember to sign up early ' + \
             'to help ensure you get a spot!'
-        announcement_channel_id = bot.get_channel(CITY_INFO[city]['announcement_channel_id'])
-        logger.debug(f"Sending announcement message for {city} to {str(CITY_INFO[city]['announcement_channel_id'])}")
-        await announcement_channel_id.send(announcement_message, allowed_mentions=allowed_mentions)
-    elif city not in CITIES_WITH_ANNOUNCE_ENABLED:
-        logger.debug(f'Could not find {city} in enabled city list: {CITIES_WITH_ANNOUNCE_ENABLED}')
+        logger.debug(f"Sending announcement message for {city} to {str(int_channel_id)}")
+        await int_channel_id.send(announcement_message, allowed_mentions=allowed_mentions)
     else:
         logger.debug(f'Determined {city} does not have an invasion today, no announcement needed.')
+
+async def send_daily_invasion_update(int_channel_id: int):
+    '''Sends a daily message announcement to [channel] with the day's invasions. See channel_events.json'''
+    daily_update_message = await get_all_invasion_string(day='today')
+    await int_channel_id.send(daily_update_message)
 
 city_slash_choice_list = []
 for city_choice_name in CITY_INFO:
@@ -409,7 +438,7 @@ async def invasions(ctx, city: str = None, day: str = None):
 
 @slash.slash(name='windows',
             description='Responds with all siege windows in the server'
-)
+    )
 async def windows(ctx):
     '''Respods to /windows command with a list of siege windows sorted alphabetically'''
     logger.info('/windows invoked')
