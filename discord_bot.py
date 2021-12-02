@@ -67,8 +67,7 @@ try:
         with open(EVENTS_CONFIG_FILEPATH, encoding='utf-8') as f:
             events_config = json.load(f)
         for channel_id in events_config:
-            channel_id = int(channel_id)
-            assert len(str(channel_id)) == 18
+            assert len(channel_id) == 18
             assert events_config[channel_id]['event_hour'] <= 24
             assert events_config[channel_id]['event_hour'] > 0
             assert events_config[channel_id]['event_minute'] < 60
@@ -138,7 +137,7 @@ async def on_ready():
                         minute=str(job_minute),
                         second="0"
                         ),
-                    args=[channel, job_city]
+                    args=[int(channel), job_city]
                 )
             for channel in CHANNELS_WITH_DAILY_UPDATE_ENABLED:
                 logger.debug(f'Adding job to scheduler for daily updates in {str(channel)}')
@@ -151,7 +150,7 @@ async def on_ready():
                         minute=str(job_minute),
                         second="0"
                         ),
-                    args=[channel]
+                    args=[int(channel)]
                 )
             logger.debug('Adding job to refresh invasion data daily at midnight')
             scheduler.add_job(
