@@ -73,10 +73,12 @@ try:
             assert events_config[channel_id]['event_minute'] < 60
             assert events_config[channel_id]['event_minute'] >= 0
             if events_config[channel_id]['event_type'] == 'announcement':
+                CHANNELS_WITH_ANNOUNCE_ENABLED[channel_id] = {}
                 CHANNELS_WITH_ANNOUNCE_ENABLED[channel_id]['city'] = events_config[channel_id]['announcement_city']
                 CHANNELS_WITH_ANNOUNCE_ENABLED[channel_id]['hour'] = int(events_config[channel_id]['event_hour'])
                 CHANNELS_WITH_ANNOUNCE_ENABLED[channel_id]['minute'] = int(events_config[channel_id]['event_minute'])
             if events_config[channel_id]['event_type'] == 'daily_update':
+                CHANNELS_WITH_DAILY_UPDATE_ENABLED[channel_id] = {}
                 CHANNELS_WITH_DAILY_UPDATE_ENABLED[channel_id]['hour'] = int(events_config[channel_id]['event_hour'])
                 CHANNELS_WITH_DAILY_UPDATE_ENABLED[channel_id]['minute'] = int(events_config[channel_id]['event_minute'])
 except Exception as e:
