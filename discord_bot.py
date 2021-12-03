@@ -374,21 +374,23 @@ async def send_city_invasion_announcement(int_channel_id: int, city: str):
     '''Sends a city invasion announcement to [channel] for [city]. See channel_events.json'''
     logger.debug(f'Attempting to send_city_invasion_announcement() to channel: {str(int_channel_id)} for city: {city}')
     if city in TODAYS_CITIES_WITH_INVASIONS:
+        announcement_channel = bot.get_channel(int_channel_id)
         allowed_mentions = discord.AllowedMentions(everyone=True)
         announcement_message = \
             f"@everyone there is an invasion today in {city} at {CITY_INFO[city]['siege_time']}. " + \
             'Please do not forget to sign up at the War Board in town. Remember to sign up early ' + \
             'to help ensure you get a spot!'
         logger.debug(f"Sending announcement message for {city} to {str(int_channel_id)}")
-        await int_channel_id.send(announcement_message, allowed_mentions=allowed_mentions)
+        await announcement_channel.send(announcement_message, allowed_mentions=allowed_mentions)
     else:
         logger.debug(f'Determined {city} does not have an invasion today, no announcement needed.')
 
 async def send_daily_invasion_update(int_channel_id: int):
     '''Sends a daily message announcement to [channel] with the day's invasions. See channel_events.json'''
+    update_channel = bot.get_channel(int_channel_id)
     logger.debug(f'Attempting to send_daily_invasion_update() to channel: {str(int_channel_id)}')
     daily_update_message = await get_all_invasion_string(day='today')
-    await int_channel_id.send(daily_update_message)
+    await update_channel.send(daily_update_message)
 
 city_slash_choice_list = []
 for city_choice_name in CITY_INFO:
