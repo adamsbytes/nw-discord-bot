@@ -417,10 +417,10 @@ async def send_world_status_if_changed(channel_id_list: list, status_client: NWW
     if status_client.has_world_status_changed():
         logger.debug('Determined world status has changed')
         new_world_status = status_client.world_status
+        update_message = f"{world_name}'s status has changed from {old_world_status} to {new_world_status}"
         for update_channel_id in channel_id_list:
             logger.debug(f'Sending world status update to {str(update_channel_id)}')
             update_channel = bot.get_channel(int(update_channel_id))
-            update_message = f"{world_name}'s status has changed from {old_world_status} to {new_world_status}"
             await update_channel.send(update_message)
     else:
         logger.debug('Determined world status has not changed')
