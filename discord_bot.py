@@ -186,7 +186,7 @@ async def on_ready():
         except Exception as sched_exception:
             logger.exception(f'Failed to start scheduler: {sched_exception}')
         else:
-            logger.debug('Initialized scheduler and added channel-announce function')
+            logger.debug('Initialized scheduler successfully')
     info_gather.start()
 
 async def clear_invasion_data_lists() -> None:
@@ -443,7 +443,6 @@ day_slash_choice_list = [
         value='tomorrow'
     )
 ]
-
 @slash.slash(name='invasions',
             description='Responds with all invasions happening in the next two days',
             options=[
