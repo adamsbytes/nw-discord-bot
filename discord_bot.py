@@ -26,16 +26,19 @@ from discord.ext import tasks
 from discord_slash import SlashCommand
 from discord_slash.utils.manage_commands import create_choice, create_option
 from dotenv import dotenv_values
+from world_status import NWWorldStatusClient
 
 # Need a better way to determine this
 if 'LOGNAME' not in os.environ: # logname is env var on ec2, not on local dev
     DEV_MODE = True
     _FILE_PREFIX = ''
     EVENTS_CONFIG_FILEPATH = None
+    WORLD_UPDATES_CONFIG_FILEPATH = None
 else:
     DEV_MODE = False
     _FILE_PREFIX = '/opt/invasion-bot/'
     EVENTS_CONFIG_FILEPATH = f'{_FILE_PREFIX}channel_events.json'
+    WORLD_UPDATES_CONFIG_FILEPATH = f'{_FILE_PREFIX}world_updates.json'
 
 CITY_INFO = {
     'Brightwood': {},
@@ -53,6 +56,7 @@ CITY_INFO = {
 
 CHANNELS_WITH_ANNOUNCE_ENABLED = {}
 CHANNELS_WITH_DAILY_UPDATE_ENABLED = {}
+WORLDS_WITH_STATUS_UPDATE_ENABLED = {}
 TODAYS_CITIES_WITH_INVASIONS = []
 TOMORROWS_CITIES_WITH_INVASIONS = []
 
@@ -81,6 +85,10 @@ try:
                 CHANNELS_WITH_DAILY_UPDATE_ENABLED[channel_id] = {}
                 CHANNELS_WITH_DAILY_UPDATE_ENABLED[channel_id]['hour'] = int(events_config[channel_id]['event_hour'])
                 CHANNELS_WITH_DAILY_UPDATE_ENABLED[channel_id]['minute'] = int(events_config[channel_id]['event_minute'])
+    if WORLD_UPDATES_CONFIG_FILEPATH is not None:
+        with open(WORLD_UPDATES_CONFIG_FILEPATH, encoding='utf-8') as f:
+            world_updates_config = json.load(f)
+        WORLDS_WITH_STATUS_UPDATE_ENABLED = world_updates_config
 except Exception as e:
     sys.exit(f'Failed to load configuration: {e}')
 
@@ -153,6 +161,16 @@ async def on_ready():
                         second="0"
                         ),
                     args=[int(channel)]
+                )
+            for world in WORLDS_WITH_STATUS_UPDATE_ENABLED:
+                logger.debug(f'Adding job to scheduler for world status updates for {world}')
+                job_channel_list = WORLDS_WITH_STATUS_UPDATE_ENABLED[world]
+                job_update_client = NWWorldStatusClient('us-east', world)
+                scheduler.add_job(
+                    send_world_status_if_changed,
+                    'interval',
+                    minutes=1,
+                    args=[job_channel_list, job_update_client, world]
                 )
             logger.debug('Adding job to refresh invasion data daily at midnight')
             scheduler.add_job(
@@ -391,6 +409,21 @@ async def send_daily_invasion_update(int_channel_id: int):
     logger.debug(f'Attempting to send_daily_invasion_update() to channel: {str(int_channel_id)}')
     daily_update_message = await get_all_invasion_string(day='today')
     await update_channel.send(daily_update_message)
+
+async def send_world_status_if_changed(channel_id_list: list, status_client: NWWorldStatusClient, world_name: str):
+    '''Sends a message if the world status changes to [channel]. See channel_events.json'''
+    logger.debug(f'Checking if {world_name} status has changed')
+    old_world_status = status_client.world_status
+    if status_client.has_world_status_changed():
+        logger.debug('Determined world status has changed')
+        new_world_status = status_client.world_status
+        for update_channel_id in channel_id_list:
+            logger.debug(f'Sending world status update to {str(update_channel_id)}')
+            update_channel = bot.get_channel(int(update_channel_id))
+            update_message = f"{world_name}'s status has changed from {old_world_status} to {new_world_status}"
+            await update_channel.send(update_message)
+    else:
+        logger.debug('Determined world status has not changed')
 
 city_slash_choice_list = []
 for city_choice_name in CITY_INFO:
