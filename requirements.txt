@@ -1,6 +1,8 @@
 apscheduler
 boto3
+bs4
 discord.py
 discord-py-slash-command
 pylint
 python-dotenv
+requests
