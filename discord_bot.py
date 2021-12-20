@@ -16,6 +16,7 @@ import math
 import os
 import sys
 from logging.handlers import RotatingFileHandler
+from logging.config import fileConfig
 
 import boto3
 import discord
@@ -39,6 +40,7 @@ else:
     _FILE_PREFIX = '/opt/invasion-bot/'
     EVENTS_CONFIG_FILEPATH = f'{_FILE_PREFIX}channel_events.json'
     WORLD_UPDATES_CONFIG_FILEPATH = f'{_FILE_PREFIX}world_updates.json'
+LOGGING_CONFIG_FILEPATH = f'{_FILE_PREFIX}logging.conf'
 
 CITY_INFO = {
     'Brightwood': {},
@@ -94,20 +96,31 @@ except Exception as e:
 
 # Configure logging
 try:
+    fileConfig(
+        LOGGING_CONFIG_FILEPATH,
+        defaults={
+            'logfilename': f"{_FILE_PREFIX}{config['LOG_FILE_NAME']}"
+        }
+    )
     logger = logging.getLogger(config['LOGGER_NAME'])
-    logger.setLevel(logging.DEBUG)
-    if DEV_MODE: # no need for rotating logs while developing
-        file_handler = logging.FileHandler(f"{_FILE_PREFIX}{config['LOG_FILE_NAME']}")
-    else:
-        file_handler = RotatingFileHandler(
-            f"{_FILE_PREFIX}{config['LOG_FILE_NAME']}",
-            maxBytes=2097152,
-            backupCount=3
-        ) # keeps up to 4 2MB logs
-    file_handler.setLevel(logging.DEBUG)
-    file_format = logging.Formatter('%(asctime)s - %(name)-16s - %(levelname)-8s - %(message)s')
-    file_handler.setFormatter(file_format)
-    logger.addHandler(file_handler)
+#    logger.setLevel(logging.DEBUG)
+#    if DEV_MODE: # no need for rotating logs while developing
+#        file_handler = logging.FileHandler(f"{_FILE_PREFIX}{config['LOG_FILE_NAME']}")
+#    else:
+#        file_handler = RotatingFileHandler(
+#            f"{_FILE_PREFIX}{config['LOG_FILE_NAME']}",
+#            maxBytes=2097152,
+#            backupCount=3
+#        ) # keeps up to 4 2MB logs
+#    file_handler.setLevel(logging.DEBUG)
+#    file_format = logging.Formatter('%(asctime)s - %(name)-16s - %(levelname)-8s - %(message)s')
+#    file_handler.setFormatter(file_format)
+#    logger.addHandler(file_handler)
+#    if DEV_MODE: # docker logging dev
+#        stream_handler = logging.StreamHandler()
+#        stream_handler.setLevel(logging.INFO)
+#        stream_handler.setFormatter(file_format)
+#        logger.addHandler(stream_handler)
 except Exception as e:
     sys.exit(f"Could not initalize logger with name {config['LOGGER_NAME']}: {e}")
 else:
