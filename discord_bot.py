@@ -113,7 +113,10 @@ except Exception as e:
 else:
     logger.debug('Logger initialized')
 
-bot = discord.Client(intents=discord.Intents.all())
+bot = discord.Client(
+    intents=discord.Intents.all(),
+    activity=discord.Game(name='New World')
+)
 slash = SlashCommand(bot, sync_commands=True)
 try:
     if DEV_MODE:
@@ -221,11 +224,11 @@ async def get_all_invasion_string(day: str = None) -> str:
         # determine today's response
         if len(today_invasion_text) > 2:
             today_invasion_str = ', '.join(today_invasion_text)
-            today_response = f'Today there are {str(len(today_invasion_text))} invasions: {today_invasion_str}'
+            today_response = f'Today there are {str(len(today_invasion_text))} invasions: {today_invasion_str} EST'
         elif len(today_invasion_text) == 2:
-            today_response = f'Today there are 2 invasions: {today_invasion_text[0]} and {today_invasion_text[1]}'
+            today_response = f'Today there are 2 invasions: {today_invasion_text[0]} and {today_invasion_text[1]} EST'
         elif len(today_invasion_text) == 1:
-            today_response = f'Today there is one invasion: {today_invasion_text[0]}'
+            today_response = f'Today there is one invasion: {today_invasion_text[0]} EST'
         else:
             today_response = 'There are no invasions happening today!'
     if day == 'tomorrow' or day is None:
@@ -241,11 +244,11 @@ async def get_all_invasion_string(day: str = None) -> str:
         # determine tomorrow's response
         if len(tomorrow_invasion_text) > 2:
             tomorrow_invasion_str = ', '.join(tomorrow_invasion_text)
-            tomorrow_response = f'Tomorrow there are {str(len(tomorrow_invasion_text))} invasions: {tomorrow_invasion_str}'
+            tomorrow_response = f'Tomorrow there are {str(len(tomorrow_invasion_text))} invasions: {tomorrow_invasion_str} EST'
         elif len(tomorrow_invasion_text) == 2:
-            tomorrow_response = f'Tomorrow there are 2 invasions: {tomorrow_invasion_text[0]} and {tomorrow_invasion_text[1]}'
+            tomorrow_response = f'Tomorrow there are 2 invasions: {tomorrow_invasion_text[0]} and {tomorrow_invasion_text[1]} EST'
         elif len(tomorrow_invasion_text) == 1:
-            tomorrow_response = f'Tomorrow there is one invasion: {tomorrow_invasion_text[0]}'
+            tomorrow_response = f'Tomorrow there is one invasion: {tomorrow_invasion_text[0]} EST'
         else:
             tomorrow_response = 'There are no invasions happening tomorrow!'
     if day is None:
