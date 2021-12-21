@@ -1,6 +1,7 @@
 #!/bin/bash
 sudo cp /opt/.invasion_bot_secrets /opt/invasion-bot/.env.secret
 sudo cp /opt/.invasion_bot_channel_events.json /opt/invasion-bot/channel_events.json
+sudo cp /opt/.invasion_bot_guild_events.json /opt/invasion-bot/guild_events.json
 sudo cp /opt/.invasion_bot_world_updates.json /opt/invasion-bot/world_updates.json
 sudo chown -R bot-user:bot-user /opt/invasion-bot
 sudo chmod +x /opt/invasion-bot/discord_bot.py

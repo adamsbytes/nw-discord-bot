@@ -22,10 +22,10 @@ import discord
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from botocore.exceptions import ClientError
-from discord.ext import tasks
 from discord_slash import SlashCommand
 from discord_slash.utils.manage_commands import create_choice, create_option
 from dotenv import dotenv_values
+from utils.discord_commands import DiscordCommands
 from world_status import NWWorldStatusClient
 
 # Need a better way to determine this
@@ -33,11 +33,13 @@ if 'LOGNAME' not in os.environ: # logname is env var on ec2, not on local dev
     DEV_MODE = True
     _FILE_PREFIX = ''
     EVENTS_CONFIG_FILEPATH = None
+    GUILD_EVENTS_CONFIG_FILEPATH = None
     WORLD_UPDATES_CONFIG_FILEPATH = None
 else:
     DEV_MODE = False
     _FILE_PREFIX = '/opt/invasion-bot/'
     EVENTS_CONFIG_FILEPATH = f'{_FILE_PREFIX}channel_events.json'
+    GUILD_EVENTS_CONFIG_FILEPATH = f'{_FILE_PREFIX}guild_events.json'
     WORLD_UPDATES_CONFIG_FILEPATH = f'{_FILE_PREFIX}world_updates.json'
 
 CITY_INFO = {
@@ -55,7 +57,7 @@ CITY_INFO = {
 }
 
 CHANNELS_WITH_ANNOUNCE_ENABLED = {}
-CHANNELS_WITH_DAILY_UPDATE_ENABLED = {}
+GUILDS_WITH_EVENT_CREATION_ENABLED = []
 WORLDS_WITH_STATUS_UPDATE_ENABLED = {}
 TODAYS_CITIES_WITH_INVASIONS = []
 TOMORROWS_CITIES_WITH_INVASIONS = []
@@ -81,10 +83,10 @@ try:
                 CHANNELS_WITH_ANNOUNCE_ENABLED[channel_id]['city'] = events_config[channel_id]['announcement_city']
                 CHANNELS_WITH_ANNOUNCE_ENABLED[channel_id]['hour'] = int(events_config[channel_id]['event_hour'])
                 CHANNELS_WITH_ANNOUNCE_ENABLED[channel_id]['minute'] = int(events_config[channel_id]['event_minute'])
-            if events_config[channel_id]['event_type'] == 'daily_update':
-                CHANNELS_WITH_DAILY_UPDATE_ENABLED[channel_id] = {}
-                CHANNELS_WITH_DAILY_UPDATE_ENABLED[channel_id]['hour'] = int(events_config[channel_id]['event_hour'])
-                CHANNELS_WITH_DAILY_UPDATE_ENABLED[channel_id]['minute'] = int(events_config[channel_id]['event_minute'])
+    if GUILD_EVENTS_CONFIG_FILEPATH is not None:
+        with open(GUILD_EVENTS_CONFIG_FILEPATH, encoding='utf-8') as f:
+            guild_events_config = json.load(f)
+        GUILDS_WITH_EVENT_CREATION_ENABLED = guild_events_config['guilds_with_event_creation_enabled']
     if WORLD_UPDATES_CONFIG_FILEPATH is not None:
         with open(WORLD_UPDATES_CONFIG_FILEPATH, encoding='utf-8') as f:
             world_updates_config = json.load(f)
@@ -113,6 +115,7 @@ except Exception as e:
 else:
     logger.debug('Logger initialized')
 
+event_client = DiscordCommands(token=config['DISCORD_TOKEN'])
 bot = discord.Client(
     intents=discord.Intents.all(),
     activity=discord.Game(name='New World')
@@ -152,19 +155,6 @@ async def on_ready():
                         ),
                     args=[int(channel), job_city]
                 )
-            for channel in CHANNELS_WITH_DAILY_UPDATE_ENABLED:
-                logger.debug(f'Adding job to scheduler for daily updates in {str(channel)}')
-                job_hour = CHANNELS_WITH_DAILY_UPDATE_ENABLED[channel]['hour']
-                job_minute = CHANNELS_WITH_DAILY_UPDATE_ENABLED[channel]['minute']
-                scheduler.add_job(
-                    send_daily_invasion_update,
-                    trigger=CronTrigger(
-                        hour=str(job_hour),
-                        minute=str(job_minute),
-                        second="0"
-                        ),
-                    args=[int(channel)]
-                )
             for world in WORLDS_WITH_STATUS_UPDATE_ENABLED:
                 logger.debug(f'Adding job to scheduler for world status updates for {world}')
                 job_channel_list = WORLDS_WITH_STATUS_UPDATE_ENABLED[world]
@@ -178,19 +168,32 @@ async def on_ready():
             logger.debug('Adding job to refresh invasion data daily at midnight')
             scheduler.add_job(
                 refresh_invasion_data,
-                trigger=CronTrigger(hour="0", minute="0", second="0")
+                trigger=CronTrigger(hour="0", minute="0", second="1")
             ) # daily task at midnight
+            logger.debug('Adding job to refresh siege windows daily 15 minutes after midnight')
+            scheduler.add_job(
+                refresh_siege_window,
+                trigger=CronTrigger(hour="0", minute="15", second="0")
+            ) # daily task at 00:15
             logger.debug('Adding job to refresh invasion data daily 15 minutes after midnight')
             scheduler.add_job(
                 refresh_invasion_data,
                 trigger=CronTrigger(hour="0", minute="15", second="0")
+            ) # daily task at 00:15
+            logger.debug('Adding job to update guild events daily 20 minutes after midnight')
+            scheduler.add_job(
+                update_guild_events,
+                trigger=CronTrigger(hour="0", minute="20", second="0")
             ) # daily task at 00:15
             scheduler.start()
         except Exception as sched_exception:
             logger.exception(f'Failed to start scheduler: {sched_exception}')
         else:
             logger.debug('Initialized scheduler successfully')
-    info_gather.start()
+            await refresh_siege_window()
+            await refresh_invasion_data()
+            await update_guild_events()
+            logger.debug('Completed on ready')
 
 async def clear_invasion_data_lists() -> None:
     '''This clears TODAYS/TOMORROWS_CITIES_WITH_INVASIONS lists'''
@@ -406,13 +409,6 @@ async def send_city_invasion_announcement(int_channel_id: int, city: str):
     else:
         logger.debug(f'Determined {city} does not have an invasion today, no announcement needed.')
 
-async def send_daily_invasion_update(int_channel_id: int):
-    '''Sends a daily message announcement to [channel] with the day's invasions. See channel_events.json'''
-    update_channel = bot.get_channel(int_channel_id)
-    logger.debug(f'Attempting to send_daily_invasion_update() to channel: {str(int_channel_id)}')
-    daily_update_message = await get_all_invasion_string(day='today')
-    await update_channel.send(daily_update_message)
-
 async def send_world_status_if_changed(channel_id_list: list, status_client: NWWorldStatusClient, world_name: str):
     '''Sends a message if the world status changes to [channel]. See channel_events.json'''
     logger.debug(f'Checking if {world_name} status has changed')
@@ -427,6 +423,37 @@ async def send_world_status_if_changed(channel_id_list: list, status_client: NWW
             await update_channel.send(update_message)
     else:
         logger.debug('Determined world status has not changed')
+
+async def update_guild_events():
+    '''Creates events that do not already exist in enabled channels'''
+    invasion_event_description = 'Available to players level 50+. Sign up at the town board!'
+    todays_date = datetime.date.today().strftime('%Y-%m-%d')
+    tomorrows_date = (datetime.date.today() + datetime.timedelta(days=1)).strftime('%Y-%m-%d')
+    for guild_id in GUILDS_WITH_EVENT_CREATION_ENABLED:
+        current_guild_event_names = []
+        current_guild_events = await event_client.list_guild_events(str(guild_id))
+        for event in current_guild_events:
+            current_guild_event_names.append(event['name'])
+        for city in TODAYS_CITIES_WITH_INVASIONS:
+            event_name = f'Invasion at {city}'
+            if event_name not in current_guild_event_names:
+                start_time = f"{todays_date} {CITY_INFO[city]['siege_time']}"
+                await event_client.create_guild_event(
+                    str(guild_id),
+                    event_name,
+                    invasion_event_description,
+                    event_start_est=start_time
+                )
+        for city in TOMORROWS_CITIES_WITH_INVASIONS:
+            event_name = f'Invasion at {city}'
+            if event_name not in current_guild_event_names:
+                start_time = f"{tomorrows_date} {CITY_INFO[city]['siege_time']}"
+                await event_client.create_guild_event(
+                    str(guild_id),
+                    event_name,
+                    invasion_event_description,
+                    event_start_est=start_time
+                )
 
 city_slash_choice_list = []
 for city_choice_name in CITY_INFO:
@@ -491,13 +518,5 @@ async def windows(ctx):
         window_texts.append(f"{city: <32} {CITY_INFO[city]['siege_time']} EST")
     response = '\n'.join(t for t in window_texts)
     await ctx.send(response)
-
-@tasks.loop(hours = 1)
-async def info_gather():
-    '''Executes referesh_invasion_data and refresh_siege_window every hour or on command'''
-    logger.info('Attempting to run scheduled task info_gather()')
-    await refresh_invasion_data()
-    await refresh_siege_window()
-    logger.info('Completed running scheduled task info_gather()')
 
 bot.run(config['DISCORD_TOKEN'])
