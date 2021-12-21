@@ -347,7 +347,7 @@ async def refresh_event_data() -> None:
         city_name = ''.join(e for e in c_name if e.isalnum()).lower()
         city_db_table = f"{config['EVENT_TABLE_PREFIX']}{city_name}"
         # Get today's events
-        logger.debug(f"Attempting to find today's evemts in table: {city_db_table}")
+        logger.debug(f"Attempting to find today's events in table: {city_db_table}")
         today_search_date = str(datetime.date.today().strftime('%Y-%m-%d'))
         response = db.get_item(
             TableName=city_db_table,
@@ -446,9 +446,9 @@ async def send_world_status_if_changed(channel_id_list: list, status_client: NWW
 async def update_guild_events():
     '''Creates events that do not already exist in enabled channels'''
     invasion_event_description = 'Available to players level 50+. Sign up at the town board!'
-    todays_date = datetime.date.today().strftime('%Y-%m-%d')
-    tomorrows_date = (datetime.date.today() + datetime.timedelta(days=1)).strftime('%Y-%m-%d')
+
     for guild_id in GUILDS_WITH_EVENT_CREATION_ENABLED:
+        logger.debug(f'Adding events for enabled guild with ID: {guild_id}')
         current_guild_event_names = []
         current_guild_events = await event_client.list_guild_events(str(guild_id))
         for event in current_guild_events:
@@ -460,8 +460,9 @@ async def update_guild_events():
                 event_description = f"{str(UPCOMING_EVENT_INFO[city]['event_attacker'])} is attacking {str(UPCOMING_EVENT_INFO[city]['event_defender'])}"
             else:
                 event_description = invasion_event_description
+            logger.debug(f'Found event: [{event_name}] with description: [{event_description}]')
             if event_name not in current_guild_event_names:
-                start_time = f"{todays_date} {CITY_INFO[city]['siege_time']}"
+                start_time = f"{str(UPCOMING_EVENT_INFO[city]['event_date'])} {CITY_INFO[city]['siege_time']}"
                 await event_client.create_guild_event(
                     str(guild_id),
                     event_name,
@@ -476,8 +477,9 @@ async def update_guild_events():
                 event_description = f"{str(UPCOMING_EVENT_INFO[city]['event_attacker'])} is attacking {str(UPCOMING_EVENT_INFO[city]['event_defender'])}"
             else:
                 event_description = invasion_event_description
+            logger.debug(f'Found event: [{event_name}] with description: [{event_description}]')
             if event_name not in current_guild_event_names:
-                start_time = f"{tomorrows_date} {CITY_INFO[city]['siege_time']}"
+                start_time = f"{str(UPCOMING_EVENT_INFO[city]['event_date'])} {CITY_INFO[city]['siege_time']}"
                 await event_client.create_guild_event(
                     str(guild_id),
                     event_name,
@@ -522,8 +524,8 @@ day_slash_choice_list = [
                     choices=day_slash_choice_list
                 )
             ])
-async def invasions(ctx, city: str = None, day: str = None):
-    '''Responds to /events command with all invasions happening for the city, or for today sorted by time'''
+async def events(ctx, city: str = None, day: str = None):
+    '''Responds to /events command with all events happening for the city, or for today sorted by time'''
     logger.info(f'/events [city: {city}] [day: {day}] invoked')
 
     if city is None:
