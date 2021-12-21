@@ -59,8 +59,9 @@ CITY_INFO = {
 CHANNELS_WITH_ANNOUNCE_ENABLED = {}
 GUILDS_WITH_EVENT_CREATION_ENABLED = []
 WORLDS_WITH_STATUS_UPDATE_ENABLED = {}
-TODAYS_CITIES_WITH_INVASIONS = []
-TOMORROWS_CITIES_WITH_INVASIONS = []
+TODAYS_CITIES_WITH_EVENTS = []
+TOMORROWS_CITIES_WITH_EVENTS = []
+UPCOMING_EVENT_INFO = {}
 
 # Load configuration
 try:
@@ -147,7 +148,7 @@ async def on_ready():
                 job_minute = CHANNELS_WITH_ANNOUNCE_ENABLED[channel]['minute']
                 job_city = CHANNELS_WITH_ANNOUNCE_ENABLED[channel]['city']
                 scheduler.add_job(
-                    send_city_invasion_announcement,
+                    send_city_event_announcement,
                     trigger=CronTrigger(
                         hour=str(job_hour),
                         minute=str(job_minute),
@@ -167,7 +168,7 @@ async def on_ready():
                 )
             logger.debug('Adding job to refresh invasion data daily at midnight')
             scheduler.add_job(
-                refresh_invasion_data,
+                refresh_event_data,
                 trigger=CronTrigger(hour="0", minute="0", second="1")
             ) # daily task at midnight
             logger.debug('Adding job to refresh siege windows daily 15 minutes after midnight')
@@ -177,7 +178,7 @@ async def on_ready():
             ) # daily task at 00:15
             logger.debug('Adding job to refresh invasion data daily 15 minutes after midnight')
             scheduler.add_job(
-                refresh_invasion_data,
+                refresh_event_data,
                 trigger=CronTrigger(hour="0", minute="15", second="0")
             ) # daily task at 00:15
             logger.debug('Adding job to update guild events daily 20 minutes after midnight')
@@ -191,16 +192,17 @@ async def on_ready():
         else:
             logger.debug('Initialized scheduler successfully')
             await refresh_siege_window()
-            await refresh_invasion_data()
+            await refresh_event_data()
             await update_guild_events()
             logger.debug('Completed on ready')
 
-async def clear_invasion_data_lists() -> None:
-    '''This clears TODAYS/TOMORROWS_CITIES_WITH_INVASIONS lists'''
+async def clear_event_data_lists() -> None:
+    '''This clears UPCOMING_EVENT_INFO list'''
     # Need a better way to do this, doing it within the refresh function
     # causes a scoping issue with the variable
-    TODAYS_CITIES_WITH_INVASIONS.clear()
-    TOMORROWS_CITIES_WITH_INVASIONS.clear()
+    TODAYS_CITIES_WITH_EVENTS.clear()
+    TOMORROWS_CITIES_WITH_EVENTS.clear()
+    UPCOMING_EVENT_INFO.clear()
 
 async def convert_time_str_to_min_sec(hour) -> int:
     '''Intakes a string with style 08:30 PM and returns 24-hour format time int: 20'''
@@ -211,49 +213,48 @@ async def convert_time_str_to_min_sec(hour) -> int:
         in_hour += 12
     return in_hour, in_minute
 
-async def get_all_invasion_string(day: str = None) -> str:
-    '''Returns a string detailing what invasions are occuring on [day]'''
+async def get_all_event_string(day: str = None) -> str:
+    '''Returns a string detailing the server's events on [day] or today/tomorrow if [day=None]'''
     if day == 'today' or day is None:
-        # this sorts today's invasions returned by their time
-        today_invasion_text = []
-        if TODAYS_CITIES_WITH_INVASIONS: # if any invasions today
+        today_event_text = []
+        if TODAYS_CITIES_WITH_EVENTS: # if any events today
             todays_cities_and_windows = {}
-            for today_city in TODAYS_CITIES_WITH_INVASIONS:
+            for today_city in TODAYS_CITIES_WITH_EVENTS:
                 if await is_hour_in_future(CITY_INFO[today_city]['siege_time']):
                     todays_cities_and_windows[today_city] = CITY_INFO[today_city]['siege_time']
             sorted_partial = sorted(todays_cities_and_windows, key = todays_cities_and_windows.get)
             for key in sorted_partial:
-                today_invasion_text.append(f"{key} at {CITY_INFO[key]['siege_time']}")
+                today_event_text.append(f"{str(UPCOMING_EVENT_INFO[key]['event_type']).capitalize()} in {key} at {CITY_INFO[key]['siege_time']}")
         # determine today's response
-        if len(today_invasion_text) > 2:
-            today_invasion_str = ', '.join(today_invasion_text)
-            today_response = f'Today there are {str(len(today_invasion_text))} invasions: {today_invasion_str} EST'
-        elif len(today_invasion_text) == 2:
-            today_response = f'Today there are 2 invasions: {today_invasion_text[0]} and {today_invasion_text[1]} EST'
-        elif len(today_invasion_text) == 1:
-            today_response = f'Today there is one invasion: {today_invasion_text[0]} EST'
+        if len(today_event_text) > 2:
+            today_invasion_str = ', '.join(today_event_text)
+            today_response = f'Today there are {str(len(today_event_text))} events: {today_invasion_str} EST'
+        elif len(today_event_text) == 2:
+            today_response = f'Today there are 2 events: {today_event_text[0]} and {today_event_text[1]} EST'
+        elif len(today_event_text) == 1:
+            today_response = f'Today there is 1 event: {today_event_text[0]} EST'
         else:
-            today_response = 'There are no invasions happening today!'
+            today_response = 'There are no events happening today!'
     if day == 'tomorrow' or day is None:
-        # this sorts tomorrow's invasions returned by their time
-        tomorrow_invasion_text = []
-        if TOMORROWS_CITIES_WITH_INVASIONS: # if any invasions tomorrow
+        tomorrow_event_text = []
+        if TOMORROWS_CITIES_WITH_EVENTS: # if any events today
             tomorrows_cities_and_windows = {}
-            for tomorrow_city in TOMORROWS_CITIES_WITH_INVASIONS:
-                tomorrows_cities_and_windows[tomorrow_city] = CITY_INFO[tomorrow_city]['siege_time']
+            for tomorrow_city in TOMORROWS_CITIES_WITH_EVENTS:
+                if await is_hour_in_future(CITY_INFO[tomorrow_city]['siege_time']):
+                    tomorrows_cities_and_windows[tomorrow_city] = CITY_INFO[tomorrow_city]['siege_time']
             sorted_partial = sorted(tomorrows_cities_and_windows, key = tomorrows_cities_and_windows.get)
             for key in sorted_partial:
-                tomorrow_invasion_text.append(f"{key} at {CITY_INFO[key]['siege_time']}")
+                tomorrow_event_text.append(f"{str(UPCOMING_EVENT_INFO[key]['event_type']).capitalize()} in {key} at {CITY_INFO[key]['siege_time']}")
         # determine tomorrow's response
-        if len(tomorrow_invasion_text) > 2:
-            tomorrow_invasion_str = ', '.join(tomorrow_invasion_text)
-            tomorrow_response = f'Tomorrow there are {str(len(tomorrow_invasion_text))} invasions: {tomorrow_invasion_str} EST'
-        elif len(tomorrow_invasion_text) == 2:
-            tomorrow_response = f'Tomorrow there are 2 invasions: {tomorrow_invasion_text[0]} and {tomorrow_invasion_text[1]} EST'
-        elif len(tomorrow_invasion_text) == 1:
-            tomorrow_response = f'Tomorrow there is one invasion: {tomorrow_invasion_text[0]} EST'
+        if len(tomorrow_event_text) > 2:
+            tomorrow_invasion_str = ', '.join(tomorrow_event_text)
+            tomorrow_response = f'Tomorrow there are {str(len(tomorrow_event_text))} events: {tomorrow_invasion_str} EST'
+        elif len(tomorrow_event_text) == 2:
+            tomorrow_response = f'Tomorrow there are 2 events: {tomorrow_event_text[0]} and {tomorrow_event_text[1]} EST'
+        elif len(tomorrow_event_text) == 1:
+            tomorrow_response = f'Tomorrow there is 1 event: {tomorrow_event_text[0]} EST'
         else:
-            tomorrow_response = 'There are no invasions happening tomorrow!'
+            tomorrow_response = 'There are no events happening tomorrow!'
     if day is None:
         response = today_response + '\n' + tomorrow_response
     elif day == 'today':
@@ -263,39 +264,44 @@ async def get_all_invasion_string(day: str = None) -> str:
 
     return response
 
-async def get_city_invasion_string(city, day=None) -> str:
-    '''Returns a string detailing invasion status for a [city] on [day] or both today/tomorrow if [day=None](default)'''
+async def get_city_event_string(city, day=None) -> str:
+    '''Returns a string detailing event status for a [city] on [day] or both today/tomorrow if [day=None](default)'''
     siege_window_in_future = await is_hour_in_future(CITY_INFO[city]['siege_time'])
-    if day is None: # both days
-        # if invasion later and it is not siege time yet
-        if (city in TODAYS_CITIES_WITH_INVASIONS) and siege_window_in_future:
-            duration_str = await get_time_til_hour(CITY_INFO[city]['siege_time'])
-            response = f"{city} has an invasion later today in {duration_str} at {CITY_INFO[city]['siege_time']} EST"
-        # if invasion happened earlier today
-        if (city in TODAYS_CITIES_WITH_INVASIONS) and not siege_window_in_future:
-            response = f"{city} had an invasion earlier today at {CITY_INFO[city]['siege_time']} EST"
-        # if invasion is tomorrow
-        if city in TOMORROWS_CITIES_WITH_INVASIONS:
-            response = f"{city} has an invasion tomorrow at {CITY_INFO[city]['siege_time']} EST"
-        # if no invasions next two days
-        if (city not in TODAYS_CITIES_WITH_INVASIONS) and (city not in TOMORROWS_CITIES_WITH_INVASIONS):
-            response = f"{city} does not have any invasions today or tomorrow!"
-    elif day == 'tomorrow': # tomorrow
-        if city in TOMORROWS_CITIES_WITH_INVASIONS:
-            response = f"{city} has an invasion tomorrow at {CITY_INFO[city]['siege_time']} EST"
+    if city in UPCOMING_EVENT_INFO and 'event_type' in UPCOMING_EVENT_INFO[city]:
+        if str(UPCOMING_EVENT_INFO[city]['event_type']).capitalize() == 'Invasion':
+            event_str = 'an invasion'
         else:
-            response = f"{city} does not have an invasion tomorrow!"
-    else: # assume today otherwise
-        # if invasion later and it is not siege time yet
-        if (city in TODAYS_CITIES_WITH_INVASIONS) and siege_window_in_future:
+            event_str = 'a war'
+    if day is None: # both days
+        # if event later and it is not siege time yet
+        if (city in TODAYS_CITIES_WITH_EVENTS) and siege_window_in_future:
             duration_str = await get_time_til_hour(CITY_INFO[city]['siege_time'])
-            response = f"{city} has an invasion later today in {duration_str} at {CITY_INFO[city]['siege_time']} EST"
-        # if invasion happened earlier today
-        if (city in TODAYS_CITIES_WITH_INVASIONS) and not siege_window_in_future:
-            response = f"{city} had an invasion earlier today at {CITY_INFO[city]['siege_time']} EST"
-        # if no invasion today
-        if city not in TODAYS_CITIES_WITH_INVASIONS:
-            response = f"{city} does not have an invasion today!"
+            response = f"{city} has {event_str} later today in {duration_str} at {CITY_INFO[city]['siege_time']} EST"
+        # if event happened earlier today
+        if (city in TODAYS_CITIES_WITH_EVENTS) and not siege_window_in_future:
+            response = f"{city} had {event_str} earlier today at {CITY_INFO[city]['siege_time']} EST"
+        # if event is tomorrow
+        if city in TOMORROWS_CITIES_WITH_EVENTS:
+            response = f"{city} has {event_str} tomorrow at {CITY_INFO[city]['siege_time']} EST"
+        # if no events next two days
+        if (city not in TODAYS_CITIES_WITH_EVENTS) and (city not in TOMORROWS_CITIES_WITH_EVENTS):
+            response = f"{city} does not have any events today or tomorrow!"
+    elif day == 'tomorrow': # tomorrow
+        if city in TOMORROWS_CITIES_WITH_EVENTS:
+            response = f"{city} has {event_str} tomorrow at {CITY_INFO[city]['siege_time']} EST"
+        else:
+            response = f"{city} does not have any events tomorrow!"
+    else: # assume today otherwise
+        # if event later and it is not siege time yet
+        if (city in TODAYS_CITIES_WITH_EVENTS) and siege_window_in_future:
+            duration_str = await get_time_til_hour(CITY_INFO[city]['siege_time'])
+            response = f"{city} has {event_str} later today in {duration_str} at {CITY_INFO[city]['siege_time']} EST"
+        # if event happened earlier today
+        if (city in TODAYS_CITIES_WITH_EVENTS) and not siege_window_in_future:
+            response = f"{city} had {event_str} earlier today at {CITY_INFO[city]['siege_time']} EST"
+        # if no event today
+        if city not in TODAYS_CITIES_WITH_EVENTS:
+            response = f"{city} does not have any events today!"
     return response
 
 async def get_time_til_hour(hour) -> str:
@@ -330,17 +336,17 @@ async def is_hour_in_future(hour) -> bool:
     logger.debug(f'Completed is_hour_in_future() with hour {hour_int}:{minute_int} and got result: {result}')
     return result
 
-async def refresh_invasion_data() -> None:
-    '''Clears locally cached invasion lists and gets invasion status from dynamodb for all cities'''
-    logger.debug('Attempting to refresh_invasion_data()')
-    await clear_invasion_data_lists()
+async def refresh_event_data() -> None:
+    '''Clears locally cached event lists and gets event status from dynamodb for all cities'''
+    logger.debug('Attempting to refresh_event_data()')
+    await clear_event_data_lists()
 
     for c_name in list(CITY_INFO.keys()):
         logger.debug(f'Refreshing data in {c_name}')
         city_name = ''.join(e for e in c_name if e.isalnum()).lower()
         city_db_table = f"{config['EVENT_TABLE_PREFIX']}{city_name}"
-        # Get today's invasions
-        logger.debug(f"Attempting to find today's invasions in table: {city_db_table}")
+        # Get today's events
+        logger.debug(f"Attempting to find today's evemts in table: {city_db_table}")
         today_search_date = str(datetime.date.today().strftime('%Y-%m-%d'))
         response = db.get_item(
             TableName=city_db_table,
@@ -350,12 +356,18 @@ async def refresh_invasion_data() -> None:
         )
         logger.debug(f'Response from db: {response}')
         if 'Item' in response:
-            logger.debug(f"Determined invasion happening today in {c_name}")
-            TODAYS_CITIES_WITH_INVASIONS.append(c_name)
+            logger.debug(f"Determined event happening today in {c_name}")
+            UPCOMING_EVENT_INFO[c_name] = {
+                'event_type': response['Item']['type']['S'],
+                'event_date': str(today_search_date),
+                'event_attacker': response['Item']['attacker']['S'],
+                'event_defender': response['Item']['defender']['S']
+            }
+            TODAYS_CITIES_WITH_EVENTS.append(c_name)
         else:
-            logger.debug(f"Determined no invasion is happening today in {c_name}")
+            logger.debug(f"Determined no event is happening today in {c_name}")
         # Get tomorrow's invasions
-        logger.debug(f"Attempting to find tomorrow's invasions in table: {city_db_table}")
+        logger.debug(f"Attempting to find tomorrow's events in table: {city_db_table}")
         tomorrow_search_date = str((datetime.date.today() + datetime.timedelta(days=1)).strftime('%Y-%m-%d'))
         response = db.get_item(
             TableName=city_db_table,
@@ -365,12 +377,18 @@ async def refresh_invasion_data() -> None:
         )
         logger.debug(f'Response from db: {response}')
         if 'Item' in response:
-            logger.debug(f"Determined invasion happening tomorrow in {c_name}")
-            TOMORROWS_CITIES_WITH_INVASIONS.append(c_name)
+            logger.debug(f"Determined event happening today in {c_name}")
+            UPCOMING_EVENT_INFO[c_name] = {
+                'event_type': response['Item']['type']['S'],
+                'event_date': str(tomorrow_search_date),
+                'event_attacker': response['Item']['attacker']['S'],
+                'event_defender': response['Item']['defender']['S']
+            }
+            TOMORROWS_CITIES_WITH_EVENTS.append(c_name)
         else:
-            logger.debug(f"Determined no invasion is happening tomorrow in {c_name}")
+            logger.debug(f"Determined no event is happening tomorrow in {c_name}")
 
-    logger.debug('Completed running refresh_invasion_data()')
+    logger.debug('Completed running refresh_event_data()')
 
 async def refresh_siege_window(city:str = None) -> None:
     '''Gets siege window data from dynamodb for [city] or all cities if [city=None] (default)'''
@@ -394,18 +412,18 @@ async def refresh_siege_window(city:str = None) -> None:
         logger.debug(f"Determined siege time in {city_name}: {CITY_INFO[city_name]['siege_time']}")
     logger.debug('Completed running refresh_siege_window()')
 
-async def send_city_invasion_announcement(int_channel_id: int, city: str):
-    '''Sends a city invasion announcement to [channel] for [city]. See channel_events.json'''
+async def send_city_event_announcement(int_channel_id: int, city: str):
+    '''Sends a city event announcement to [channel] for [city]. See channel_events.json'''
     logger.debug(f'Attempting to send_city_invasion_announcement() to channel: {str(int_channel_id)} for city: {city}')
-    if city in TODAYS_CITIES_WITH_INVASIONS:
-        announcement_channel = bot.get_channel(int_channel_id)
-        allowed_mentions = discord.AllowedMentions(everyone=True)
-        announcement_message = \
-            f"@everyone there is an invasion today in {city} at {CITY_INFO[city]['siege_time']}. " + \
-            'Please do not forget to sign up at the War Board in town. Remember to sign up early ' + \
-            'to help ensure you get a spot!'
-        logger.debug(f"Sending announcement message for {city} to {str(int_channel_id)}")
-        await announcement_channel.send(announcement_message, allowed_mentions=allowed_mentions)
+    if city in UPCOMING_EVENT_INFO:
+        if UPCOMING_EVENT_INFO[city]['event_date'] == str(datetime.date.today().strftime('%Y-%m-%d')):
+            announcement_channel = bot.get_channel(int_channel_id)
+            allowed_mentions = discord.AllowedMentions(everyone=True)
+            announcement_message = \
+                f"@everyone don't forget to sign up for the {UPCOMING_EVENT_INFO[city]['event_type']} today in {city} at {CITY_INFO[city]['siege_time']}. " + \
+                'Remember to sign up early to help ensure you get a spot!'
+            logger.debug(f"Sending announcement message for {city} to {str(int_channel_id)}")
+            await announcement_channel.send(announcement_message, allowed_mentions=allowed_mentions)
     else:
         logger.debug(f'Determined {city} does not have an invasion today, no announcement needed.')
 
@@ -434,24 +452,34 @@ async def update_guild_events():
         current_guild_events = await event_client.list_guild_events(str(guild_id))
         for event in current_guild_events:
             current_guild_event_names.append(event['name'])
-        for city in TODAYS_CITIES_WITH_INVASIONS:
-            event_name = f'Invasion at {city}'
+        for city in TODAYS_CITIES_WITH_EVENTS:
+            event_type = str(UPCOMING_EVENT_INFO[city]['event_type']).capitalize()
+            event_name = f'{event_type} at {city}'
+            if event_type == 'War':
+                event_description = f"{str(UPCOMING_EVENT_INFO[city]['event_attacker'])} is attacking {str(UPCOMING_EVENT_INFO[city]['event_defender'])}"
+            else:
+                event_description = invasion_event_description
             if event_name not in current_guild_event_names:
                 start_time = f"{todays_date} {CITY_INFO[city]['siege_time']}"
                 await event_client.create_guild_event(
                     str(guild_id),
                     event_name,
-                    invasion_event_description,
+                    event_description,
                     event_start_est=start_time
                 )
-        for city in TOMORROWS_CITIES_WITH_INVASIONS:
-            event_name = f'Invasion at {city}'
+        for city in TOMORROWS_CITIES_WITH_EVENTS:
+            event_type = str(UPCOMING_EVENT_INFO[city]['event_type']).capitalize()
+            event_name = f'{event_type} at {city}'
+            if event_type == 'War':
+                event_description = f"{str(UPCOMING_EVENT_INFO[city]['event_attacker'])} is attacking {str(UPCOMING_EVENT_INFO[city]['event_defender'])}"
+            else:
+                event_description = invasion_event_description
             if event_name not in current_guild_event_names:
                 start_time = f"{tomorrows_date} {CITY_INFO[city]['siege_time']}"
                 await event_client.create_guild_event(
                     str(guild_id),
                     event_name,
-                    invasion_event_description,
+                    event_description,
                     event_start_est=start_time
                 )
 
@@ -473,8 +501,8 @@ day_slash_choice_list = [
         value='tomorrow'
     )
 ]
-@slash.slash(name='invasions',
-            description='Responds with all invasions happening in the next two days',
+@slash.slash(name='events',
+            description='Responds with all events (wars and invasions) happening in the next two days',
             options=[
                 create_option(
                     name='city',
@@ -492,13 +520,13 @@ day_slash_choice_list = [
                 )
             ])
 async def invasions(ctx, city: str = None, day: str = None):
-    '''Responds to /invasions command with all invasions happening for the city, or for today sorted by time'''
-    logger.info(f'/invasions [city: {city}] [day: {day}] invoked')
+    '''Responds to /events command with all invasions happening for the city, or for today sorted by time'''
+    logger.info(f'/events [city: {city}] [day: {day}] invoked')
 
     if city is None:
-        response = await get_all_invasion_string(day)
+        response = await get_all_event_string(day)
     else:
-        response = await get_city_invasion_string(city, day)
+        response = await get_city_event_string(city, day)
 
     await ctx.send(response)
 
