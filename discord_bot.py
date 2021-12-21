@@ -225,15 +225,13 @@ async def get_all_event_string(day: str = None) -> str:
                     todays_cities_and_windows[today_city] = CITY_INFO[today_city]['siege_time']
             sorted_partial = sorted(todays_cities_and_windows, key = todays_cities_and_windows.get)
             for key in sorted_partial:
-                today_event_text.append(f"{str(UPCOMING_EVENT_INFO[key]['event_type']).capitalize()} in {key} at {CITY_INFO[key]['siege_time']}")
+                today_event_text.append(f"    {CITY_INFO[key]['siege_time']} EST - {str(UPCOMING_EVENT_INFO[key]['event_type']).capitalize()} in {key}")
         # determine today's response
-        if len(today_event_text) > 2:
-            today_invasion_str = ', '.join(today_event_text)
-            today_response = f'Today there are {str(len(today_event_text))} events: {today_invasion_str} EST'
-        elif len(today_event_text) == 2:
-            today_response = f'Today there are 2 events: {today_event_text[0]} and {today_event_text[1]} EST'
+        if len(today_event_text) > 1:
+            today_invasion_str = '\n'.join(today_event_text)
+            today_response = f'Today there are {str(len(today_event_text))} events:\n{today_invasion_str}'
         elif len(today_event_text) == 1:
-            today_response = f'Today there is 1 event: {today_event_text[0]} EST'
+            today_response = f'Today there is 1 event:\n{today_event_text[0]}'
         else:
             today_response = 'There are no events happening today!'
     if day == 'tomorrow' or day is None:
@@ -245,15 +243,13 @@ async def get_all_event_string(day: str = None) -> str:
                     tomorrows_cities_and_windows[tomorrow_city] = CITY_INFO[tomorrow_city]['siege_time']
             sorted_partial = sorted(tomorrows_cities_and_windows, key = tomorrows_cities_and_windows.get)
             for key in sorted_partial:
-                tomorrow_event_text.append(f"{str(UPCOMING_EVENT_INFO[key]['event_type']).capitalize()} in {key} at {CITY_INFO[key]['siege_time']}")
+                tomorrow_event_text.append(f"    {CITY_INFO[key]['siege_time']} EST - {str(UPCOMING_EVENT_INFO[key]['event_type']).capitalize()} in {key}")
         # determine tomorrow's response
-        if len(tomorrow_event_text) > 2:
-            tomorrow_invasion_str = ', '.join(tomorrow_event_text)
-            tomorrow_response = f'Tomorrow there are {str(len(tomorrow_event_text))} events: {tomorrow_invasion_str} EST'
-        elif len(tomorrow_event_text) == 2:
-            tomorrow_response = f'Tomorrow there are 2 events: {tomorrow_event_text[0]} and {tomorrow_event_text[1]} EST'
+        if len(tomorrow_event_text) > 1:
+            tomorrow_invasion_str = '\n'.join(tomorrow_event_text)
+            tomorrow_response = f'Tomorrow there are {str(len(tomorrow_event_text))} events:\n{tomorrow_invasion_str}'
         elif len(tomorrow_event_text) == 1:
-            tomorrow_response = f'Tomorrow there is 1 event: {tomorrow_event_text[0]} EST'
+            tomorrow_response = f'Tomorrow there is 1 event:\n{tomorrow_event_text[0]}'
         else:
             tomorrow_response = 'There are no events happening tomorrow!'
     if day is None:
