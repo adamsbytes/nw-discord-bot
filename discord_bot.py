@@ -15,6 +15,7 @@ import logging
 import math
 import os
 import sys
+import time
 from logging.handlers import RotatingFileHandler
 
 import boto3
@@ -482,6 +483,7 @@ async def update_guild_events():
                     event_description,
                     event_start_est=start_time
                 )
+        time.sleep(2.5) # attempting to prevent rate limiting
 
 city_slash_choice_list = []
 for city_choice_name in CITY_INFO:
