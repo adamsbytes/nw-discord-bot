@@ -468,6 +468,7 @@ async def update_guild_events():
                     event_description,
                     event_start_est=start_time
                 )
+                time.sleep(2.5) # attempting to prevent rate limiting
         for city in TOMORROWS_CITIES_WITH_EVENTS:
             event_type = str(UPCOMING_EVENT_INFO[city]['event_type']).capitalize()
             event_name = f'{event_type} at {city}'
@@ -483,7 +484,7 @@ async def update_guild_events():
                     event_description,
                     event_start_est=start_time
                 )
-        time.sleep(2.5) # attempting to prevent rate limiting
+                time.sleep(2.5) # attempting to prevent rate limiting
 
 city_slash_choice_list = []
 for city_choice_name in CITY_INFO:
