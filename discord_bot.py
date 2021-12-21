@@ -229,11 +229,11 @@ async def get_all_event_string(day: str = None) -> str:
         # determine today's response
         if len(today_event_text) > 1:
             today_invasion_str = '\n'.join(today_event_text)
-            today_response = f'Today there are {str(len(today_event_text))} events:\n{today_invasion_str}'
+            today_response = f'**Today there are {str(len(today_event_text))} events:**\n{today_invasion_str}'
         elif len(today_event_text) == 1:
-            today_response = f'Today there is 1 event:\n{today_event_text[0]}'
+            today_response = f'**Today there is 1 event:\n{today_event_text[0]}**'
         else:
-            today_response = 'There are no events happening today!'
+            today_response = '**There are no events happening today!**'
     if day == 'tomorrow' or day is None:
         tomorrow_event_text = []
         if TOMORROWS_CITIES_WITH_EVENTS: # if any events today
@@ -247,11 +247,11 @@ async def get_all_event_string(day: str = None) -> str:
         # determine tomorrow's response
         if len(tomorrow_event_text) > 1:
             tomorrow_invasion_str = '\n'.join(tomorrow_event_text)
-            tomorrow_response = f'Tomorrow there are {str(len(tomorrow_event_text))} events:\n{tomorrow_invasion_str}'
+            tomorrow_response = f'**Tomorrow there are {str(len(tomorrow_event_text))} events:**\n{tomorrow_invasion_str}'
         elif len(tomorrow_event_text) == 1:
-            tomorrow_response = f'Tomorrow there is 1 event:\n{tomorrow_event_text[0]}'
+            tomorrow_response = f'**Tomorrow there is 1 event:\n{tomorrow_event_text[0]}**'
         else:
-            tomorrow_response = 'There are no events happening tomorrow!'
+            tomorrow_response = '**There are no events happening tomorrow!**'
     if day is None:
         response = today_response + '\n' + tomorrow_response
     elif day == 'today':
